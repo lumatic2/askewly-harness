@@ -4,6 +4,8 @@
 
 빈 레포에 협업 인프라를 깔고(`/harness-bootstrap`), 그 위에서 실제 작업을 갈래별 워크플로우로 실행한다(`/harness`).
 
+> 🇬🇧 **English**: A harness skill package for Claude Code · Codex that keeps coding agents on track across multi-step work. `/harness-bootstrap` lays AI-readiness infra into a repo (CLAUDE.md, ROADMAP, ADRs, branch files); `/harness` then runs the work across four modes (product / learning / tooling / workflow), each with its own progress state and completion gate. `/session-end` · `/session-log` handle handoff + journaling. Install with `bash install.sh` (or `./install.ps1` on Windows) — copies the skills into `~/.claude/skills/`. Docs below are in Korean. See [Install](#설치) · [Quickstart](#quickstart).
+
 ## 왜 하네스인가
 
 > **모델은 엔진이고, 하네스는 차의 나머지 전부다.**
