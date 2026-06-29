@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# 로컬 전용 — 재싱크 체크리스트 (공개 X)
+SYNC.md
