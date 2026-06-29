@@ -1,7 +1,7 @@
 ---
 name: harness
 description: >-
-  jha0313/harness_framework 기반 구조적 구현 워크플로우를 갈래 4분기(product/learning/tooling/workflow)로 확장 — harness-bootstrap(설치)이 끝난 프로젝트에서 실제 작업 실행 시 사용. §0 갈래 자동 감지(갈래 본문 §C~§E 는 references/<branch>.md 에서 on-demand 로드) 후 product=phases/+step 파일 순차 실행, learning=reference 분석(ANALYSIS 5섹션)+인덱스 표, tooling=스킬·스크립트·런타임 changeset+검증, workflow=playbook 작성/실행. §A1 위계·스케일 루브릭(관측 가능한 step-leaf 테스트)으로 horizon/milestone/step 규모를 가르고, 긴 작업은 §E 실행 전에 §B2-scope 재귀 분해로 durable plan doc(docs/plans/)에 step 트리를 펼쳐 Claude/Codex 가 몇 시간 이어가게 한다. active milestone 이 없거나 새 방향이 필요하면 §B0.5 Planning cascade authoring 으로 Objective→Horizon→Milestone 을 토론 루프로 작성(docs/OBJECTIVE.md·docs/horizons/)한다. 가드레일 주입·컨텍스트 누적·3회 자가교정·2단계 커밋. 사용자가 "/harness", "하네스로 개발해줘", "단계별로 나눠서 구현", "step 파일 만들어줘", "phases 생성해줘", "레퍼런스 분석해줘", "reference 분석 노트", "스킬 수정", "tooling changeset", "playbook 작성", "playbook 실행", "멀티스텝 개발 계획", "step으로 쪼개서 설계", "계획 세워서 문서화", "설계도 만들어줘", "어디까지 구현할지 정하고 진행", "objective 짜줘", "horizon 정해줘", "프로젝트 목표/방향 잡아줘", "새 horizon 기획", "마일스톤 계획" 이라고 말할 때 반드시 이 스킬을 사용하라. 단순 계획만 원하면 /spec을, 신규 레포 초기 세팅이면 /harness-bootstrap을 사용.
+  jha0313/harness_framework 기반 구조적 구현 워크플로우를 갈래 4분기(product/learning/tooling/workflow)로 확장 — harness-bootstrap(설치)이 끝난 프로젝트에서 실제 작업 실행 시 사용. §0 갈래 자동 감지(갈래 본문 §C~§E 는 references/<branch>.md 에서 on-demand 로드) 후 product=phases/+step 파일 순차 실행, learning=reference 분석(ANALYSIS 5섹션)+인덱스 표, tooling=스킬·스크립트·런타임 changeset+검증, workflow=playbook 작성/실행. §A1 위계·스케일 루브릭(관측 가능한 step-leaf 테스트)으로 horizon/milestone/step 규모를 가르고, 긴 작업은 §E 실행 전에 §B2-scope 재귀 분해로 durable plan doc(docs/plans/)에 step 트리를 펼쳐 Claude/Codex 가 몇 시간 이어가게 하고, 멀티스텝이면 §E 실행 전 그 계획을 사용자에게 쉽게 제시하고 명시 승인을 받는다(plan mode 게이트). active milestone 이 없거나 새 방향이 필요하면 §B0.5 Planning cascade authoring 으로 Objective→Horizon→Milestone 을 토론 루프로 작성(docs/OBJECTIVE.md·docs/horizons/)한다. 가드레일 주입·컨텍스트 누적·3회 자가교정·2단계 커밋. 사용자가 "/harness", "하네스로 개발해줘", "단계별로 나눠서 구현", "step 파일 만들어줘", "phases 생성해줘", "레퍼런스 분석해줘", "reference 분석 노트", "스킬 수정", "tooling changeset", "playbook 작성", "playbook 실행", "멀티스텝 개발 계획", "step으로 쪼개서 설계", "계획 세워서 문서화", "설계도 만들어줘", "어디까지 구현할지 정하고 진행", "objective 짜줘", "horizon 정해줘", "프로젝트 목표/방향 잡아줘", "새 horizon 기획", "마일스톤 계획" 이라고 말할 때 반드시 이 스킬을 사용하라. 단순 계획만 원하면 /spec을, 신규 레포 초기 세팅이면 /harness-bootstrap을 사용.
 ---
 
 이 프로젝트는 harness-bootstrap 으로 부팅된 하네스를 쓴다. 아래 워크플로우에 따라 작업하라.
@@ -187,33 +187,32 @@ planning_gate:
 - **produce = §A 탐색 ~ §D 파일 생성.** 문서·계획·스캐폴드만 쓴다. 실제 구현코드·최종 산출물 생성·작업물 git 커밋 **금지**.
 - **run = §E 실행.** 가드레일 주입하에 실제로 만들고·검증하고·커밋한다. git 기계장치는 run 만 소유.
 
-> **§B2 는 produce 구간을 *여닫는 두 시점*을 담는다.** 아래 **§B2-scope = produce *진입* 게이트(§C 전 발화)**, 그 다음 **pass-through 이하 = produce→run *경계* 게이트(§D 후 발화)**. 한 섹션이지만 같은 순간에 다 도는 게 아니다.
+> **§B2 는 produce 구간을 *여닫는 두 시점*을 담는다.** 아래 **§B2-scope = produce *진입* 게이트(§C 전 발화)**, 그 다음 **경계 게이트 이하 = produce→run *경계* 게이트(§D 후 발화 — 멀티스텝이면 plan mode 정지·승인)**. 한 섹션이지만 같은 순간에 다 도는 게 아니다.
 
 **§B2-scope (produce 진입 — §C·§E 전). scope 결정 + 재귀 분해 → plan doc.** milestone 이 여러 step 으로 쪼개지거나 세션을 넘겨 이어받을 작업이면, §C(spec)·§E(실행) 전에:
 1. **scope 경계** — 이번 run 이 닫을 범위 + 중단점(검증 PASS·blocked·budget). **결정 지점 지도: §A1=어느 milestone · 여기=이번 run 어디까지 · §B3=다음 후보 승격** (세 facet, 혼동 말 것). scope 가 사용자 소유(어디까지·무엇 제외)면 §B0-1 처럼 묻는다.
 2. **재귀 분해 → plan doc** — 목표→milestone→step 으로 §A1 **step-leaf 테스트**를 적용해 leaf 까지 쪼개, 트리를 `docs/plans/<YYYY-MM-DD>-<slug>.md`(product `phases/<task>/PLAN.md`, 템플릿 `templates/PLAN_TEMPLATE.md`)에 **체크박스 트리(한 줄/leaf, spec 인라인 X)** 로 박는다. plan doc 위계 섹션은 cascade 상위(`docs/OBJECTIVE.md`·`docs/horizons/<slug>.md`)로 백링크한다(ADR 0007, §B3). leaf 의 구체 spec(read-files·시그니처·AC)은 §C 엔진이 채운다(트리·spec 비대화는 §E-3 누적 비용↑ — 시그니처 수준 유지). **장부 권위: plan doc = milestone 픽업용 상위 트리(읽기 위주) / 갈래 status machine(`index.json`·changeset 표·`run.json`) = step 실시간 상태(쓰기 *정본*)** — 진행률은 status machine 이 정본, plan doc 체크박스는 milestone boundary 에서만 동기화(이중기록 drift 방지). 이 plan doc 으로 **새 에이전트가 몇 시간 이어받는다.**
 3. **아는 만큼만 펼친다** — 전체를 미리 못 펼치는 탐색적 작업은 *지금 아는 다음 1~2 leaf* 만 확정·진행하고 나머지는 finding 큐로 emerge 시킨다. up-front 완전 분해 강요 = 분석마비, 금지.
 4. **면제 + 과분해 금지**: 단일 step·가벼운 작업, **learning(1 ref=1 step)·workflow-B(playbook 고정)** 는 평면 — 재귀 면제. **★tooling 기본 단위 = 1 changeset = 1 step.** 한 응집적 변경이면 *파일이 여럿이고 검증 항목이 여럿이어도* 1 step 이다 — **여러 검증 단계 ≠ 여러 step**(검증은 changeset 의 Verification 체크리스트로). 재귀 분해·plan doc·milestone 은 **≥2 *독립* changeset(별개의 응집 변경) + 통합 검증**일 때만. 한 changeset 을 4-leaf 트리로 펴는 건 과분해 — dogfood 에서 적발(F2/T3).
-5. **plan doc 게이트 (self-check)** — multi-step milestone 이면 §E 진입 전 plan doc 에 ① step 트리 ≥2 leaf ② 각 leaf 의 AC/검증 한 줄 ③ 중단점 이 있어야 한다. 없으면 §E 진입 말고 이 단계로 복귀 (product `npm test` AC·workflow-B `verify-run.py` 에 대응하는 *분해 완성* 자가 점검 — pass-through 의 "사용자 승인 생략"과 별개로 산출물 완성도는 점검).
+5. **plan doc 게이트 (self-check)** — multi-step milestone 이면 §E 진입 전 plan doc 에 ① step 트리 ≥2 leaf ② 각 leaf 의 AC/검증 한 줄 ③ 중단점 이 있어야 한다. 없으면 §E 진입 말고 이 단계로 복귀 (product `npm test` AC·workflow-B `verify-run.py` 에 대응하는 *분해 완성* 자가 점검 — 경계 게이트에서 계획을 사용자에게 제시하기 전에 이 분해 완성도부터 자가 점검).
 
-**기본은 통과 (pass-through).** §D 끝나면 produce 산출물 경로 + run 이 바꿀 것을 **한 줄 통지**("produce 끝 → run 진입: …")만 하고 §E 로 바로 넘어간다. 매번 멈추지 않는다.
+**경계 게이트 (§D 후). 멀티스텝이면 기본 정지·제시·승인(plan mode); 단일/가벼움이면 통과.**
 
-**필수 정지 예외.** §A1 에서 target milestone 이 없거나, 사용자 요청과 active milestone 이 정합하지 않거나, §A2 legacy ROADMAP normalization 이 필요하거나, 새 ROADMAP milestone/horizon 추가·수정이 필요하다고 판단되면 pass-through 하지 않는다. 이 경우 §B1 `planning_gate.spec_delta` 로 제안만 하고, 사용자 승인 전 §D/§E 진입·구현코드 변경·커밋 **금지**. 새 objective/horizon/milestone 을 *작성*하는 단계라면 **§B0.5 Planning cascade authoring** 으로 들어가 토론 루프로 cascade 문서를 짠다.
+- **멀티스텝 milestone (§B2-scope 로 plan doc 을 펼친 작업)** → **기본 정지.** §E 전에 계획을 사용자에게 *제시하고 명시 승인*을 받는다. 아래 "계획 제시 형식"으로 보여준 뒤 AskUserQuestion(Codex 면 평문 한 줄)으로 **진행 / 수정 / 중단** 을 묻는다. **승인("진행") 전 §E 진입·구현코드 변경·커밋 금지(하드 차단).** "수정"이면 plan doc 을 고쳐 다시 제시, "중단"이면 멈춘다. (native plan mode 의 ExitPlanMode 와 같은 자리 — 단 도구 비의존: Claude=AskUserQuestion, Codex=평문.)
+- **단일 step·가벼운 작업** (learning 1 ref, workflow-B playbook 고정, 단일 changeset, typo·marker·기계적 이어가기) → **pass-through.** produce 산출물 경로 + run 이 바꿀 것을 **한 줄 통지**("produce 끝 → run 진입: …")만 하고 §E 로 바로 넘어간다. 매번 멈추지 않는다. (단 사용자가 "실행 전에 멈춰"·"계획 먼저" 를 명시하면 단일 작업도 아래 제시·승인을 적용한다.)
 
-단, 사용자가 같은 turn 에 명시적으로 continuation 을 요청했고 §B3 continuation gate 가 이미 있는 pending/Next Candidate 를 그대로 active 로 승격할 수 있다고 판단하면, 이것은 "새 horizon 작성" 이 아니라 "승인된 후보 실행" 으로 본다. 이 경우 승격 커밋 또는 ROADMAP marker 변경 후 §A1 로 돌아가 다음 target 을 확정하고 pass-through 할 수 있다.
+**계획 제시 형식 (멀티스텝 정지 시 — "쉬운 설명").** plan doc 파일을 그대로 던지지 말고, 사용자가 한눈에 읽도록 아래를 출력한다:
+1. **산문 요약** — 한 문단으로 *무엇을·왜* (이번 run 이 닫을 범위).
+2. **체크박스 step 트리** — 각 leaf 한 줄 + `(verify: <커맨드/체크>)`.
+3. **핵심 결정 + 리스크** — 이 계획이 깔고 가는 결정(있으면)·알려진 리스크·중단점 한 줄.
+4. **plan doc·산출물 경로 + run 영향** — `docs/plans/<date>-<slug>.md`(product `phases/<task>/PLAN.md`·index.json+step 목록 / learning ANALYSIS·EXPERIMENT 스켈레톤 / tooling changeset README+검증 checklist / workflow-A playbook 스켈레톤 / workflow-B run.json) 링크 + run 이 생성·수정할 파일·커밋 한 줄.
+5. **승인 질문** — "진행 / 수정 / 중단".
 
-**정지는 옵트인.** 사용자가 이번 `/harness` 호출에서 "계획부터 보여줘"·"실행 전에 멈춰"·"플랜 먼저 확인" 처럼 **명시적으로 요청**했을 때만 §D 끝 → §E 전에 멈추고, 다음 3개를 제시한 뒤 승인을 받는다:
+미해결 사용자 결정(스택·범위·외부연동 등)이 남아 있으면 진행 승인부터 받지 말고, 먼저 §B0-1 식 [선택지+추천+근거]로 그 결정을 매듭짓는다(승인 질문에 합쳐도 됨). 결정이 다 매듭진 뒤 "진행" 을 받는다.
 
-1. **produce 산출물 경로** (갈래별, multi-step 이면 `docs/plans/<date>-<slug>.md` plan doc 포함):
-   - product: `phases/<task>/index.json` + 생성한 `step{N}.md` 목록
-   - learning: 채울 `ANALYSIS.md`/`EXPERIMENT.md` 스켈레톤 + 분석/실험 대상
-   - tooling: `changesets/<YYYYMMDD>-<slug>/README.md` + 영향 파일/검증 checklist
-   - workflow-A: `playbooks/<slug>.md` 스켈레톤 (4섹션 빈칸)
-   - workflow-B: `run.json` checklist (각 항목 `requires_authority` 표시 포함)
-2. **run 이 바꿀 것 한 줄** — 어떤 파일이 생기고 어떤 커밋이 찍히나.
-3. 승인 질문 — Claude 에서는 AskUserQuestion, Codex 에서는 평문 한 줄로 **"이대로 run 진행 / 계획 수정 / 중단"** 을 묻는다.
+**필수 정지 예외.** §A1 에서 target milestone 이 없거나, 사용자 요청과 active milestone 이 정합하지 않거나, §A2 legacy ROADMAP normalization 이 필요하거나, 새 ROADMAP milestone/horizon 추가·수정이 필요하다고 판단되면 단일/가벼움 pass-through 도 하지 않는다. 이 경우 §B1 `planning_gate.spec_delta` 로 제안만 하고, 사용자 승인 전 §D/§E 진입·구현코드 변경·커밋 **금지**. 새 objective/horizon/milestone 을 *작성*하는 단계라면 **§B0.5 Planning cascade authoring** 으로 들어가 토론 루프로 cascade 문서를 짠다.
 
-옵트인으로 멈춘 경우엔 승인 전 §E 진입·구현코드 변경·커밋 **금지**.
+단, 사용자가 같은 turn 에 명시적으로 continuation 을 요청했고 §B3 continuation gate 가 이미 있는 pending/Next Candidate 를 그대로 active 로 승격할 수 있다고 판단하면, 이것은 "새 horizon 작성" 이 아니라 "승인된 후보 실행" 으로 본다. 이 경우 승격 커밋 또는 ROADMAP marker 변경 후 §A1 로 돌아가 다음 target 을 확정한다(그 뒤에도 멀티스텝이면 위 경계 게이트가 다시 적용).
 
 ---
 

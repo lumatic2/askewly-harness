@@ -1,7 +1,7 @@
 ---
 name: session-end
 description: >-
-  세션 마무리에서 ROADMAP은 읽기만 하고 두 산출물을 쓴다: ① ROADMAP.md read-only preflight(현재 horizon·active milestone·주의점 확인, 편집 금지) ② CLAUDE.local.md 핸드오프 덮어쓰기(다음 세션이 바로 이어받을 현재 상태·다음 할 일) ③ vault 40-Logs 저널 append(서사적 기록, 분량 제한 없음). ROADMAP milestone 상태 변경·150줄 compact·BACKLOG archive는 /harness가 소유한다. vault-write(단순 노트 저장)·session-log(로그만 append)·vault-recap(기간 recap)·weekly-review(주간 회고)·roadmap-update(ROADMAP만)와 다르다. 사용자가 "오늘 마무리할게", "세션 끝내자", "작업 끝났어", "전체 마감", "핸드오프까지 남겨줘", "/session-end" 라고 말할 때 반드시 이 스킬을 사용하라. 사용자가 "로드맵까지 정리해줘"처럼 ROADMAP 편집을 명시하면 /harness 또는 roadmap-update를 제안하고, session-end 자체로는 ROADMAP을 수정하지 않는다. 사용자가 "로그만", "append만", "session-end-light", "로드맵은 건드리지 말고"라고 하면 session-log를 사용한다.
+  세션 마무리에서 ROADMAP·cascade(OBJECTIVE/horizon)는 읽기만 하고 두 산출물을 쓴다: ① ROADMAP+cascade read-only preflight(현재 objective·horizon·active milestone·다음 차례·주의점 확인, 편집 금지) ② CLAUDE.local.md 핸드오프 덮어쓰기(다음 세션이 바로 이어받을 계획 위치·현재 상태·다음 할 일) ③ vault 40-Logs 저널 append(서사적 기록, 분량 제한 없음). ROADMAP milestone 상태 변경·150줄 compact·BACKLOG archive는 /harness가 소유한다. vault-write(단순 노트 저장)·session-log(로그만 append)·vault-recap(기간 recap)·weekly-review(주간 회고)·roadmap-update(ROADMAP만)와 다르다. 사용자가 "오늘 마무리할게", "세션 끝내자", "작업 끝났어", "전체 마감", "핸드오프까지 남겨줘", "/session-end" 라고 말할 때 반드시 이 스킬을 사용하라. 사용자가 "로드맵까지 정리해줘"처럼 ROADMAP 편집을 명시하면 /harness 또는 roadmap-update를 제안하고, session-end 자체로는 ROADMAP을 수정하지 않는다. 사용자가 "로그만", "append만", "session-end-light", "로드맵은 건드리지 말고"라고 하면 session-log를 사용한다.
 allowed-tools:
   - Bash
   - Read
@@ -26,7 +26,7 @@ codex: true
 
 아래 4단계를 순서대로 실행한다.
 
-## 1. ROADMAP.md read-only preflight + CLAUDE.local.md 갱신
+## 1. ROADMAP + cascade read-only preflight + CLAUDE.local.md 갱신
 
 ### ROADMAP.md (git 루트, read-only)
 
@@ -52,6 +52,16 @@ ROADMAP 에 반영할 필요가 있는 상태 변화가 보이면 `CLAUDE.local.
 - ROADMAP 주의: 168 lines로 150줄 budget 초과. 다음 `/harness`에서 compact 필요.
 ```
 
+### cascade 위치 (read-only)
+
+다음 세션이 "지금 계획 어디에 있나"를 한눈에 잡도록, ROADMAP 위의 cascade 계층(ADR 0007)도 **읽기만** 한다. 있으면 top-down 으로:
+- `docs/OBJECTIVE.md` — 북극성 한 줄 (없으면 cascade 미도입 repo → 이 블록 전체 skip)
+- `ROADMAP.md` 의 `<!-- harness:goal -->` 가 가리키는 `docs/horizons/<slug>.md` — active horizon 목표 한 줄
+- active milestone(`status="active"`) id·제목·`Status`·DoD 진행 한 줄
+- **다음 차례** 추론 — 그 milestone 의 `docs/plans/<date>-<slug>.md` 에서 미완료 다음 step, 또는 milestone 완료 시 다음 후보 승격(§B3)·active=0 이면 "§B0.5 새 horizon 필요"
+
+이 cascade 파일들도 **편집·생성 금지**(ROADMAP 과 동일 read-only). 읽은 결과는 아래 `### 계획 위치 (cascade)` 블록으로 `CLAUDE.local.md` 에 적는다. cascade 파일이 없으면 블록을 만들지 않고 넘어간다.
+
 ### CLAUDE.local.md (git 루트, Write 로 덮어씀)
 
 핸드오프다 — **다음 할 일을 구체적으로, 넉넉하게** 쓴다. 인위적 cap 없음.
@@ -63,11 +73,19 @@ ROADMAP 에 반영할 필요가 있는 상태 변화가 보이면 `CLAUDE.local.
 - {다음 할 일 — 파일 경로·명령·현재 에러·왜 하는지까지 풀어서. 한 항목이 여러 줄이어도 좋다}
 - {필요한 만큼}
 
+### 계획 위치 (cascade)
+- Objective: {docs/OBJECTIVE.md 북극성 한 줄}
+- Horizon: {slug} — {목표 한 줄} (docs/horizons/{slug}.md)
+- Milestone(active): {id} {제목} — Status {[ ]/[x]}, {DoD 진행 한 줄}
+- 다음 차례: {다음 step / 다음 milestone 승격 / active=0 → §B0.5 새 horizon 필요}
+
 ### 현재 상태 / 주의점
 - {어디까지 했고, 무엇이 열려 있고, 무엇을 조심할지 — 길이 제한 없음}
 - {커밋·푸시 여부, 브랜치 상태는 거의 항상 포함}
 - {ROADMAP read-only preflight 결과: active milestone, budget 초과 여부, 다음 /harness 에서 처리할 항목}
 ```
+
+> `### 계획 위치 (cascade)` 는 cascade docs(`docs/OBJECTIVE.md`·`docs/horizons/`)가 있을 때만 쓴다. 없는 repo 면 이 블록을 생략한다(ROADMAP-only).
 
 기준 = "다음 세션이 이 파일만 읽고 곧장 이어받을 수 있는가". `이어서 할 일`은 보통 **3~8개**, 각 항목을 짧게 줄이지 말고 **구체적으로 풀어쓴다**(모호어 금지: "테스트 마저" ❌ → "test_foo.py::test_bar 통과 — 현재 AssertionError at L42, 입력 fixture 가 None 인 게 원인으로 추정" ✅). `현재 상태`도 제한 없음.
 
