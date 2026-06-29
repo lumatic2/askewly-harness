@@ -7,7 +7,7 @@
 set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)/skills"
-SKILLS=(harness harness-bootstrap)
+SKILLS=(harness harness-bootstrap session-end session-log)
 
 WITH_CODEX=0
 [[ "${1:-}" == "--codex" ]] && WITH_CODEX=1

@@ -7,7 +7,7 @@ param([switch]$Codex)
 
 $ErrorActionPreference = "Stop"
 $src = Join-Path $PSScriptRoot "skills"
-$skills = @("harness", "harness-bootstrap")
+$skills = @("harness", "harness-bootstrap", "session-end", "session-log")
 
 function Install-Into($dest) {
   New-Item -ItemType Directory -Force -Path $dest | Out-Null
