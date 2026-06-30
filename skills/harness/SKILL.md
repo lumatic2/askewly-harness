@@ -36,7 +36,7 @@ description: >-
 3. `ROADMAP.md` 의 active milestone 이 특정 갈래 산출물을 가리키면 그 갈래를 선택한다.
    - `phases/...`, `docs/PRD.md`, `docs/ARCHITECTURE.md` → product
    - `references/.../ANALYSIS.md`, `experiments/...` → learning
-   - `changesets/...`, `skills/.../SKILL.md`, `scripts/...`, `setup.sh` → tooling
+   - `changesets/...`, `skills/.../SKILL.md`, `scripts/...`, `setup.sh`, `skill-trigger-acceptance`, `hardening-parity` → tooling
    - `playbooks/...`, `outputs/.../run.json`, `config/sources.md` → workflow
 4. 위가 불충분할 때만 파일 signature 를 **capability** 로 해석한다.
    - workflow capability: `docs/DOMAIN.md` + `playbooks/`
@@ -175,6 +175,7 @@ planning_gate:
 - `unavailable` 은 임시 상태다. Required 계획으로 확정하지 않는다.
 - Security 관점은 secret 실읽기를 요구하지 않는다. `.env` 또는 토큰 확인이 필요하면 Risk Gate 로 멈춘다.
 - source code 변경이 있으면 lint / formatter / test / smoke / review gate 중 하나 이상이 DoD에 들어가야 한다.
+- **optimistic-path 금지**: source 변경 DoD 는 happy-path 검증만으로 완료 처리하지 않는다. 실패 모드 1개(없는 source·실패 커맨드·auth 경계·빈 데이터·rollback·배포 미반영 등)를 확인하는 항목을 함께 적는다. 실패 경로 확인이 불가능하면 결과는 partial.
 
 가벼운 작업은 `team_validation_mode: not_required_lightweight` 로 충분하며, 긴 planning block을 만들지 않아도 된다.
 
