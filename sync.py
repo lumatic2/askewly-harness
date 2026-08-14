@@ -300,8 +300,10 @@ def collect() -> tuple[dict[str, bytes], list[str]]:
     for label, repo, paths, strip, prefix in SOURCES:
         if not (repo / ".git").exists():
             raise SystemExit(f"{label}: 소스 저장소 없음({repo}) — 작성자 기기에서만 실행된다.")
-        head = git(repo, "rev-parse", "HEAD")
-        when = git(repo, "log", "-1", "--format=%cs")
+        # HEAD 가 아니라 채취 경로를 마지막으로 건드린 커밋을 기록한다 —
+        # HEAD 를 적으면 무관한 커밋마다 MANIFEST 가 stale 로 뜬다(2026-08-14 실측).
+        head = git(repo, "log", "-1", "--format=%H", "--", *paths)
+        when = git(repo, "log", "-1", "--format=%cs", "--", *paths)
         pending = dirty_paths(repo, paths)
         if pending:
             raise SystemExit(
