@@ -91,6 +91,15 @@ P = [
     # harness-plan: orca 스폰 옵트인 줄 삭제
     ("harness-plan/SKILL.md",
      r"\n\s*- \*orca 스폰 경로\(옵트인\)\*[^\n]*", "", 1),
+    # harness-plan: 실행 위치 3택(M17)의 워크트리 스폰 항 삭제 → 공개판은 2택
+    ("harness-plan/SKILL.md",
+     r" / 워크트리 스폰\(`spawn_chain\.py` 1커맨드 — orca 옵트인\)", "", 1),
+    ("harness-plan/SKILL.md",
+     r"\*\*실행 위치 3택\*\* \(M17 2026-08-14\)", "**실행 위치**", 1),
+    # harness-run: 이어받기 절차(M17)의 3택 언급 일반화
+    ("harness-run/SKILL.md",
+     r" 실행 위치 3택\(같은 턴·새 세션·워크트리 스폰\)의 어느 경로로 와도 이 계약은 같다\.",
+     " 어느 경로로 와도 이 계약은 같다.", 1),
     # harness-run: 사다리 2단 위임 규약 참조 → 일반화
     ("harness-run/SKILL.md",
      r"\(운용 규약 `~/projects/agent-orchestration/context/delegation\.md` — model 명시 필수\)",

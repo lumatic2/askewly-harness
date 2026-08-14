@@ -20,6 +20,7 @@ description: >-
 
 - run 은 **승인된 계획 위에서만 돈다.** `.harness/work.json` 에 approval receipt(plan SHA-256)가 있고 hash 가 현재 plan 과 일치해야 한다 — 없거나 어긋나면 실행·continuation 금지, `/harness-plan` 으로 돌아간다.
 - 승인 등록(approve)은 **실행할 바로 그 체크아웃**에서 이뤄졌어야 한다(work.json 은 checkout-local, HQ1). 다른 체크아웃의 approve 는 이 워크트리를 지키지 못한다.
+- **다른 세션이 연 work 의 이어받기 — 세션 핸드오프 (M17 2026-08-14)**: work.json 의 소유 세션이 아니면 continuation 이 이 세션에 발화하지 않는다. 절차 = ① `python ~/.codex/hooks/harness_work_state.py diagnose --root .` 로 상태·문서화된 정지 여부 확인 ② `... resume --root . --work-id <id> --session <runtime>:<uuid>` 로 소유 승계(문서화된 정지 잔존 시 거부 — 재개는 아래 RL1) ③ 승인 hash 가 현재 plan 과 일치함을 확인한 뒤 다음 unchecked step 부터 continuation. 어느 경로로 와도 이 계약은 같다.
 - 단일 step·가벼운 작업(계획서 없는 pass-through)은 receipt 없이 진행하되, `/harness-plan` 의 한 줄 통지("produce 끝 → run 진입: …")를 거친 것이어야 한다.
 - **영수증이 보장하는 것은 "무엇이" 승인됐나지 "누가" 승인했나가 아니다** (2026-08-06 외부 감사 #1). `approved_by: "user"` 는 `approve_harness_plan.py` 가 무조건 기록하는 상수이며, 에이전트가 그 커맨드를 직접 실행하면 그대로 만들어진다 — 이 장치는 **계획 본문을 SHA-256 으로 봉인하는 무결성 씰**이고, 승인 행위의 인증이 아니다. 봉인은 실제로 작동한다(계획이 바뀌거나 사라지면 continuation 이 거부된다). 사용자 승인 자체는 **계획 게이트에서 사람이 하는 일**이지 이 파일이 증명하는 것이 아니다.
 
