@@ -66,6 +66,7 @@ SOURCES = [
 
 # ── 제외 — 개인 인프라 없이는 동작하지 않는 파일 ─────────────────────────
 EXCLUDE = {
+    "harness-run/references/fanout.md",          # orca fan-out 절차 (개인 오케스트레이션)
     "harness-run/scripts/spawn_chain.py",        # Orca 워크트리 스폰 (개인 오케스트레이션)
     "harness-run/scripts/sync_stop_gate.py",     # 텔레그램 동기 정지 relay
     "harness-run/scripts/test_sync_stop_gate.py",
@@ -96,6 +97,10 @@ P = [
      r" / 워크트리 스폰\(`spawn_chain\.py` 1커맨드 — orca 옵트인\)", "", 1),
     ("harness-plan/SKILL.md",
      r"\*\*실행 위치 3택\*\* \(M17 2026-08-14\)", "**실행 위치**", 1),
+    # harness-run: fan-out 절(M18) 통삭제 — fanout.md 는 제외 목록, 포인터 절도 공개판에서 소거
+    ("harness-run/SKILL.md",
+     r"## fan-out \(배차 설계 절이 있는 계획 — M18 2026-08-14\)\n[\s\S]*?(?=^## 막힘 사다리)",
+     "", 1),
     # harness-run: 이어받기 절차(M17)의 3택 언급 일반화
     ("harness-run/SKILL.md",
      r" 실행 위치 3택\(같은 턴·새 세션·워크트리 스폰\)의 어느 경로로 와도 이 계약은 같다\.",
