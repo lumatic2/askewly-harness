@@ -231,3 +231,72 @@ _wrongval = validate(GOOD.replace("Status: approved 2026-07-11", "Status: draft"
 assert any("approved or completed" in e and "draft" in e for e in _wrongval), _wrongval
 
 print("plan gate Status 지목 2건 PASS")
+
+# ── 배차 설계 절 (2026-08-14 M18 step-1) ─────────────────────────────────────
+# opt-in: 절이 없으면 무검사(기존 계획 무영향)는 위 GOOD == [] 들이 이미 증명한다.
+DISPATCH_GOOD = """# Plan
+> 생성: 2026-08-14
+Status: approved 2026-08-14
+## Scope Boundary
+- Execution mode: `continuous`
+- Stop only: completed, blocked, decision_required, risk_gate, secret_required, user_stopped.
+- Rollback/cleanup: revert each narrow commit.
+## Step Tree
+- [ ] **step-1 — base**
+  - Artifact: base module
+  - Risk: 기계적 (순수 추가)
+  - Files: scripts/base.py
+  - Dependencies: none
+  - Verify: pytest base
+  - Failure probe: missing input fails
+  - Commit: one changeset
+- [ ] **step-2 — worker-a**
+  - Artifact: worker a output
+  - Risk: 기계적 (순수 추가)
+  - Files: scripts/a.py
+  - Dependencies: step-1
+  - Verify: pytest a
+  - Failure probe: bad input fails
+  - Commit: one changeset
+- [ ] **step-3 — worker-b**
+  - Artifact: worker b output
+  - Risk: 기계적 (순수 추가)
+  - Files: scripts/b.py
+  - Dependencies: step-1
+  - Verify: pytest b
+  - Failure probe: bad input fails
+  - Commit: one changeset
+## 배차 설계
+- 근거: 벽시계 단축 (독립 leaf 2, 파일 겹침 없음)
+- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a
+- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b
+## 스캐폴딩 결정
+- source-of-truth: scripts/
+- 검증: pytest
+- 배포/운영: 해당 없음 — 로컬 fixture
+- 검토 후 제외: 없음
+## 결정 로그
+- status: resolved
+- decision: local only
+"""
+
+assert validate(DISPATCH_GOOD) == [], validate(DISPATCH_GOOD)
+# probe 1 — worker 에 model 누락
+_no_model = validate(DISPATCH_GOOD.replace("worker(sonnet) · 격리 worktree · 검증 pytest a", "worker() · 격리 worktree · 검증 pytest a"))
+assert any("model 이 없다" in e for e in _no_model), _no_model
+# probe 2 — 유령 leaf 참조
+_ghost = validate(DISPATCH_GOOD.replace("- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b", "- step-9 · worker(sonnet) · 격리 worktree · 검증 pytest b"))
+assert any("실재하지 않는 leaf" in e and "step-9" in e for e in _ghost), _ghost
+# probe 3 — 순차 의존 leaf 의 병렬 worker 선언 (step-3 이 step-2 에 의존하도록 변형)
+_seq = validate(DISPATCH_GOOD.replace("  - Dependencies: step-1\n  - Verify: pytest b", "  - Dependencies: step-2\n  - Verify: pytest b"))
+assert any("순차 의존" in e for e in _seq), _seq
+# 문법 밖 행 (격리 누락) 지목
+_bad_row = validate(DISPATCH_GOOD.replace("- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a", "- step-2 · worker(sonnet) · 검증 pytest a"))
+assert any("문법 밖" in e for e in _bad_row), _bad_row
+# 근거 줄 누락
+_no_gain = validate(DISPATCH_GOOD.replace("- 근거: 벽시계 단축 (독립 leaf 2, 파일 겹침 없음)\n", ""))
+assert any("근거" in e for e in _no_gain), _no_gain
+# inline 행은 model 불요 — 정상 통과
+assert validate(DISPATCH_GOOD.replace("- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a", "- step-2 · inline · 격리 none · 검증 pytest a")) == []
+
+print("plan gate 배차 설계 7건 PASS")

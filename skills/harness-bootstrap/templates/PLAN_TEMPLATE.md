@@ -60,6 +60,12 @@ Status: {draft → 승인 시 approved (날짜·승인 문구) → 완료 시 co
   - Commit: {이 leaf의 changeset/commit 경계}
   - (더 쪼갤 필요 있으면 하위 leaf 로)
 
+## 배차 설계 (선택 — 동시 가능 leaf 가 있고 배차 이득을 살 때만, 2026-08-14 M18)
+> **opt-in**: 이 절이 없으면 게이트는 아무것도 요구하지 않는다. 쓰는 조건 = Dependencies 파생 동시 집합에 leaf ≥2 + 배차 이득 체크리스트(`~/projects/the-orchestration-repo/context/delegation.md`: 파일 격리·독립 시각·컨텍스트 격리·벽시계 단축) 중 ≥1 을 실제로 산다.
+> 행 문법(게이트가 검사): `- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <equivalent 경로/커맨드>` — worker 행은 model 필수, 참조 leaf 는 실재해야 하며, 서로 의존하는 두 leaf 를 worker 로 병렬 선언하면 차단된다. **이 절을 가진 계획의 승인(ㄱㄱ)이 곧 그 규모 fan-out 의 사전 승인이다** — 절에 없는 즉흥 fan-out 은 여전히 건별 승인(글로벌 규약).
+- 근거: {배차 이득 항목 — 무엇을 사는가}
+- {step-N · worker(sonnet) · 격리 worktree · 검증 …}
+
 ## 재생성 장벽 (선택 — wave 사이에 한 번 도는 횡단 단계)
 > 특정 step 들이 끝난 뒤 **다음 leaf 를 시작하기 전에** 한 번 돌아야 하는 것. 배포·훅 출고·인덱스
 > 재생성이 여기 해당한다(지금까지는 사람이 기억해서 돌렸다). 없으면 이 절을 지운다.

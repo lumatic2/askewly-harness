@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `674b2df134cd` (2026-08-14 기준) · 파일: 27개
+- 커밋: `10854be8b432` (2026-08-14 기준) · 파일: 27개
 
 ## engine-scripts
 
@@ -13,7 +13,7 @@
 
 ## engine-templates
 
-- 커밋: `870bb97f4512` (2026-08-02 기준) · 파일: 2개
+- 커밋: `db6af9cfec62` (2026-08-14 기준) · 파일: 2개
 
 | 파일 | sha256(치환 후) |
 |---|---|
@@ -28,7 +28,7 @@
 | `harness-bootstrap/scripts/templates/tooling/ROADMAP.md` | `a15d937da8f5ba62` |
 | `harness-bootstrap/scripts/templates/workflow/DOMAIN.md` | `e11f95a27d50fed7` |
 | `harness-bootstrap/scripts/templates/workflow/PLAYBOOK_TEMPLATE.md` | `9a1ca41f5586bcdd` |
-| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `9d114d415afd464d` |
+| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `a09e8845a8a652f5` |
 | `harness-bootstrap/templates/REPORT_TEMPLATE.md` | `08d182c3ab10e47f` |
 | `harness-done/SKILL.md` | `bd1038621604ab73` |
 | `harness-plan/SKILL.md` | `d872cbee6fdb24db` |
@@ -47,8 +47,8 @@
 | `harness-run/scripts/test_ledger_append.py` | `93e38a7d2e82ad85` |
 | `harness-run/scripts/test_report_close.py` | `dc8405dd970419de` |
 | `harness-run/scripts/test_roadmap_sync.py` | `2db3b3db1a7cea6c` |
-| `harness-run/scripts/test_validate_plan_gate.py` | `f4a0d477be1280d8` |
-| `harness-run/scripts/validate_plan_gate.py` | `34f90075a2c62d08` |
+| `harness-run/scripts/test_validate_plan_gate.py` | `a922f58b73279e83` |
+| `harness-run/scripts/validate_plan_gate.py` | `77269c01c8622a9e` |
 | `harness-run/templates/REPORT_TEMPLATE.md` | `f15b7b2c0b9d7021` |
 | `session-end/SKILL.md` | `3a773ad290259cf9` |
 | `session-end/bin/handoff_commit.sh` | `1913f511a0054b7d` |

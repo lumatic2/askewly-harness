@@ -383,6 +383,101 @@ def derive_waves(text: str) -> list[list[str]]:
     return waves
 
 
+# ── 배차 설계 (2026-08-14 M18 step-1) ────────────────────────────────────────
+# 선택(opt-in) 절 — 절이 없으면 무검사(기존 계획 무영향). 있으면 문법·실재·모순을 검사한다.
+# 행 문법: `- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <경로/커맨드>`
+# 근거 줄: `- 근거: <배차 이득 — 파일 격리|독립 시각|컨텍스트 격리|벽시계 단축 중 ≥1>`
+# 배차 이득·워커/검증자 계약의 정본은 delegation.md — 여기는 문법과 그래프 모순만 본다.
+DISPATCH_HEADING_RE = re.compile(r"^##[ \t]+배차 설계.*$", re.M)
+DISPATCH_ROW_RE = re.compile(
+    r"^[ \t]*-[ \t]*(?P<id>step-\d+)[ \t]*·[ \t]*(?P<mode>inline|worker\((?P<model>[^)]*)\))"
+    r"[ \t]*·[ \t]*격리[ \t]+(?P<iso>none|worktree)[ \t]*·[ \t]*검증[ \t]+(?P<verify>.+)$"
+)
+DISPATCH_STEP_BULLET_RE = re.compile(r"^[ \t]*-[ \t]*step-\d+\b.*$", re.M)
+DISPATCH_GAIN_RE = re.compile(r"^[ \t]*-[ \t]*근거[ \t]*:[ \t]*(.*)$", re.M)
+DISPATCH_GAINS = ("파일 격리", "독립 시각", "컨텍스트 격리", "벽시계 단축")
+
+
+def _leaf_dependency_edges(text: str) -> dict[str, list[str]]:
+    """id 형식 leaf 의 (id → 의존 id 목록). validate_graph 와 같은 절단 규칙."""
+    matches = list(LEAF_ID_HEADING.finditer(text))
+    edges: dict[str, list[str]] = {}
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        h2 = re.search(r"^## ", text[start:end], re.M)
+        if h2:
+            end = start + h2.start()
+        dep = LEAF_FIELDS["Dependencies"].search(text[start:end])
+        ids, _err = parse_dependency_value(dep.group(1) if dep else "")
+        edges[m.group("id")] = ids
+    return edges
+
+
+def validate_dispatch(text: str) -> list[str]:
+    heading = DISPATCH_HEADING_RE.search(text)
+    if heading is None:
+        return []
+    errors: list[str] = []
+    tail = text[heading.end():]
+    section = re.split(r"^##\s+", tail, maxsplit=1, flags=re.M)[0]
+    leaf_ids = {m.group("id") for m in LEAF_ID_HEADING.finditer(text)}
+    rows: dict[str, re.Match] = {}
+    for line_m in DISPATCH_STEP_BULLET_RE.finditer(section):
+        line = line_m.group(0)
+        m = DISPATCH_ROW_RE.match(line)
+        if not m:
+            errors.append(
+                f"배차 행이 문법 밖이다: {line.strip()[:70]} — "
+                "`- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <경로>`"
+            )
+            continue
+        sid = m.group("id")
+        if m.group("mode").startswith("worker") and not (m.group("model") or "").strip():
+            errors.append(f"배차 행 {sid}: worker 에 model 이 없다 — worker(<model>) 로 명시한다")
+        if sid not in leaf_ids:
+            errors.append(f"배차 행이 실재하지 않는 leaf 를 가리킨다: {sid}")
+        if sid in rows:
+            errors.append(f"배차 행 중복: {sid}")
+        rows[sid] = m
+    if not rows and not errors:
+        errors.append("배차 설계 절에 배차 행이 없다 — 절을 지우거나 행을 적는다")
+    gain = DISPATCH_GAIN_RE.search(section)
+    if gain is None or not any(g in gain.group(1) for g in DISPATCH_GAINS):
+        errors.append(
+            "배차 설계 절에 배차 이득 `- 근거:` 줄이 없다 — "
+            f"{'|'.join(DISPATCH_GAINS)} 중 실제로 사는 것을 적는다"
+        )
+    # 순차 의존 leaf 의 병렬(worker) 선언 차단 — worker 로 지정된 두 leaf 사이에
+    # 의존 경로가 있으면 Dependencies 파생 동시 집합과 모순이다.
+    workers = [sid for sid, m in rows.items() if m.group("mode").startswith("worker") and sid in leaf_ids]
+    if len(workers) >= 2:
+        edges = _leaf_dependency_edges(text)
+
+        def reachable(src: str, dst: str) -> bool:
+            seen: set[str] = set()
+            stack = [src]
+            while stack:
+                node = stack.pop()
+                if node == dst:
+                    return True
+                for dep in edges.get(node, []):
+                    if dep not in seen:
+                        seen.add(dep)
+                        stack.append(dep)
+            return False
+
+        for i in range(len(workers)):
+            for j in range(i + 1, len(workers)):
+                a, b = workers[i], workers[j]
+                if reachable(a, b) or reachable(b, a):
+                    errors.append(
+                        f"순차 의존 leaf 를 병렬 worker 로 선언했다: {a} ↔ {b} — "
+                        "의존이 있는 쪽을 inline 으로 내리거나 배차 행을 지운다"
+                    )
+    return errors
+
+
 # 계획 수치의 출처 (2026-07-21). 계기: 계획 전제 오류 5건이 전부 정본 대신
 # 파생 지표(grep 수치·구버전 스키마·기억·잘린 화면)로 단정한 데서 났다.
 # 규약 정본: the-source-repo/docs/measurement-provenance.md
@@ -473,6 +568,7 @@ def validate(text: str) -> list[str]:
         )
 
     errors.extend(validate_measurement_provenance(text))
+    errors.extend(validate_dispatch(text))
 
     supersedes = SUPERSEDES.search(text)
     if supersedes is not None and not supersedes.group(1).strip():
