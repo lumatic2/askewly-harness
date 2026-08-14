@@ -31,7 +31,7 @@ description: >-
 - 완료된 계획서는 `archive/plans/` 로 이동한다(record 동결 — 옛 백링크는 정정하지 않는다).
 - 보고서 제시는 **md 정본 경로 + 본문 요약**. Artifact 렌더 안 한다.
 - **`active_work_id` 는 비우지 않는다** — Stop hook 완료 알림이 이 포인터를 읽는다(다음 approve 가 자연 갱신).
-- **예외(high-risk — 보안·결제·마이그레이션·대규모 diff·배포면)**: spec/quality 2축 + near-miss 기록이 필요해 `ledger_append.py close` 경로를 유지.
+- **예외(high-risk — 보안·결제·마이그레이션·대규모 diff·배포면)**: spec/quality 2축 + near-miss 기록이 필요해 `ledger_append.py close` 경로를 유지. (구 `/harness` 승계 — 3분할 2026-07-24 이월. 2026-08-15 M20 감사: high-risk milestone 미발생으로 실발화 0 — 기회 부재이므로 유지)
 - 크기 회고: milestone 이 changeset 1개로 닫혔으면 그건 step 이었다 — 보고서에 라벨 정합 적발 한 줄. 목표가 남았는데 연쇄 없는 1-milestone 승인으로 끝난 계획은 **과소 그릇 신호**로 한 줄 추가 — 목표 자체가 그 크기였다면 해당 없음(2026-07-31 목표 단위 계획 규약).
 
 ## ROADMAP lifecycle (상위 status machine)
@@ -54,6 +54,6 @@ description: >-
 
 ## Milestone 연쇄 (기본)
 
-승인된 계획 안에서는 milestone 완료 boundary 에서 **멈추지 않고**, ROADMAP 의 다음 pending/Next Candidate(`DoD`·`Evidence`·`Gap` 완비 + 결정 로그상 새 사용자 결정 불요) 1개를 자동 승격해 연쇄 진행한다 — 사용자 선호: 계획은 단단히, 실행은 끊김 없이. **정지 조건**: ① 사용자 소유 결정·secret·risk gate 출현 ② blocked/error ③ 승격 가능 후보 없음 ④ 사용자가 "하나만"·"여기까지" 명시. **새 milestone 을 *작성*해야 하면** 여전히 정지 → `/harness-plan` 계획 작성. **연쇄 중 승격된 milestone 이 새 plan doc 을 펼치면, 정지 없이 진행하되 그 계획(산문 요약+step 트리+결정 로그)을 진행 보고에 반드시 제시한다 — 결정 로그에 새 사용자 결정이 있으면 제시가 아니라 정지.**
+(도입: 3분할 2026-07-24 이월 — 사용자 선호 확정 규약) 승인된 계획 안에서는 milestone 완료 boundary 에서 **멈추지 않고**, ROADMAP 의 다음 pending/Next Candidate(`DoD`·`Evidence`·`Gap` 완비 + 결정 로그상 새 사용자 결정 불요) 1개를 자동 승격해 연쇄 진행한다 — 사용자 선호: 계획은 단단히, 실행은 끊김 없이. **정지 조건**: ① 사용자 소유 결정·secret·risk gate 출현 ② blocked/error ③ 승격 가능 후보 없음 ④ 사용자가 "하나만"·"여기까지" 명시. **새 milestone 을 *작성*해야 하면** 여전히 정지 → `/harness-plan` 계획 작성. **연쇄 중 승격된 milestone 이 새 plan doc 을 펼치면, 정지 없이 진행하되 그 계획(산문 요약+step 트리+결정 로그)을 진행 보고에 반드시 제시한다 — 결정 로그에 새 사용자 결정이 있으면 제시가 아니라 정지.**
 
 후보 소진(active 0 + 승격 가능 0)이면 멈춘다 — 새 방향은 `/harness-plan`.

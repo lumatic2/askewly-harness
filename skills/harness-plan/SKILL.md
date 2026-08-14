@@ -179,7 +179,7 @@ milestone 이 여러 step 이거나 세션을 넘겨 이어받을 작업이면, 
 3. **결정 사전 소진 (plan-hardening)** — `## 결정 로그` 에 **사용자 소유 결정**을 전부 나열해 계획 단계에서 매듭. 없으면 "없음" 명시(빈 섹션 금지). **승인 후에는 예상 밖 중요 결정(신규 리스크·스코프 변경·크레덴셜)이 아닌 한 추가 질문 없이 무중단 진행.**
    - **표면 열거 → 소진 (FA1)**: manifest + 4렌즈(구조/행동/기술/계약) 전수 열거 → 방화벽(근거됨→실현 / 튜닝값→기본값 / **assumed 만 질문**). **assumed 잔존 = `resolved` 불가.** 상세 `references/elicit.md`.
 4. **아는 만큼만 펼친다** — 탐색적 작업은 다음 1~2 leaf 만 확정하고 나머지는 finding 큐로. up-front 완전 분해 강요 금지.
-5. **면제 + 과분해 금지**: 단일 step·가벼운 작업, 분석(1 ref=1 step)은 평면 — 재귀 면제. **★기본 단위 = 1 step = 1 응집 변경 = 1 커밋.** 한 응집 변경이면 파일·검증이 여럿이어도 1 step — **여러 검증 단계 ≠ 여러 step**(검증은 Verification 체크리스트로). 기록은 **milestone 당 changeset 1개**(OI5). plan doc·milestone 은 **≥2 독립 step + 통합 검증**일 때만. 한 step 을 4-leaf 로 펴는 건 과분해(F2/T3).
+5. **면제 + 과분해 금지**: 단일 step·가벼운 작업, 분석(1 ref=1 step)은 평면 — 재귀 면제. **★기본 단위 = 1 step = 1 응집 변경 = 1 커밋.** 한 응집 변경이면 파일·검증이 여럿이어도 1 step — **여러 검증 단계 ≠ 여러 step**(검증은 Verification 체크리스트로). 기록 위치·단위는 배치 규약 「무엇이 남는가」 표가 정본(OI5 — 재서술 않음, 2026-08-15 M20 통합). plan doc·milestone 은 **≥2 독립 step + 통합 검증**일 때만. 한 step 을 4-leaf 로 펴는 건 과분해(F2/T3).
 6. **plan 기계 lint** — multi-step 이면 실행 전 `python "$HARNESS_SCRIPTS/validate_plan_gate.py" <plan>`. 필수 항목·placeholder·의존 그래프는 **게이트가 말해준다** — 수기 복창하지 않는다.
 
 **스캐폴딩 결정 (CS6→HQ2).**
