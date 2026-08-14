@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Append one session entry to ~/vault/40-Logs/YYYY-MM-DD.md.
+"""Append one session entry to $HARNESS_JOURNAL_DIR/YYYY-MM-DD.md.
 
 This helper intentionally does one thing: append a dated session block to the
 daily vault log and print the exact content that was written. It does not read
 or modify repository files.
 """
+import os
 import io
 import os
 import platform
+import os
+import subprocess
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -17,18 +21,53 @@ sys.stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
+def _host_label(prefix):
+    """미등재 환경을 `prefix(hostname)` 로 **보이게** 만든다 — 조용한 오기록 금지."""
+    try:
+        h = subprocess.run(["hostname"], capture_output=True, text=True,
+                           check=False).stdout.split(".", 1)[0]
+    except Exception:
+        h = ""
+    safe = "".join(c for c in h if c.isalnum() or c in "-_") or "unknown"
+    return f"{prefix}({safe})"
+
+
+def _mac_label(hostname):
+    """hostname → 기기 라벨. 미등재 기기는 **조용히 오기록되지 않게** 호스트명을 보여준다.
+
+    hostname 을 라벨로 매핑하고, 미등재 기기는 호스트명을 그대로 보여준다.
+    """
+    h = (hostname or "").split(".", 1)[0]
+    for needle, label in (("MacBookAir", "Mac Air"),
+                          ("MacBookPro", "MacBook Pro"),
+                          ("Macmini", "Mac mini")):
+        if needle.lower() in h.lower():
+            return label
+    safe = "".join(c for c in h if c.isalnum() or c in "-_") or "unknown"
+    return f"Mac({safe})"
+
+
 def device_label():
-    """Return a short OS label while avoiding hostname encoding issues."""
+    """Return a short device label while avoiding hostname encoding issues."""
     system = platform.system()
     if system == "Windows":
         return "Windows"
     if system == "Darwin":
-        return "macOS"
+        try:
+            hostname = subprocess.run(
+                ["hostname"], capture_output=True, text=True, check=False
+            ).stdout
+        except Exception:
+            hostname = ""
+        return _mac_label(hostname)
+
     try:
         version = Path("/proc/version").read_text(errors="replace").lower()
     except Exception:
         version = ""
-    return "WSL" if "microsoft" in version else "Linux"
+    if "microsoft" in version:
+        return "Windows"
+    return _host_label("Linux")
 
 
 def main():
@@ -42,9 +81,7 @@ def main():
     hhmm = now.strftime("%H:%M")
     label = device_label()
 
-    base = os.environ.get("HARNESS_JOURNAL_DIR")
-    log_dir = Path(base).expanduser() if base else Path.home() / "vault" / "40-Logs"
-    log = log_dir / f"{today}.md"
+    log = Path(os.environ.get("HARNESS_JOURNAL_DIR", str(Path.home() / "harness-journal"))) / f"{today}.md"
     log.parent.mkdir(parents=True, exist_ok=True)
     if not log.exists():
         log.write_text(

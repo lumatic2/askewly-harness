@@ -30,7 +30,7 @@
 - {아직 active 는 아닌 후보}
 
 ## Archive Pointer
-완료 이력은 `BACKLOG.md` 참조. ROADMAP.md 는 150줄 이하 current horizon 만 유지한다. milestone 완료·compact 는 `/harness` 가 `roadmap_sync.py` 로 처리한다.
+완료 이력은 `docs/BACKLOG.md` 참조. ROADMAP.md 는 150줄 이하 current horizon 만 유지한다. milestone 완료·compact 는 `/harness` 가 처리한다.
 
 ## 의사결정 이력
 "왜 X sync 방식을 씀?", "왜 Y host 는 candidate 로 둠?" 같은 선택은 `docs/adr/` 에 ADR 로.

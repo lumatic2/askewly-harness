@@ -2,27 +2,35 @@
 # 다른 git 레포에 AI-readiness 하네스를 부트스트랩.
 #
 # 사용:
-#   bash /path/to/harness-bootstrap/scripts/init-ai-readiness.sh [<repo>] --full \
-#        --mode <product|learning|tooling|workflow> [--kind <web|mobile|backend>]
+#   bash /path/to/the-source-repo/scripts/init-ai-readiness.sh [<repo>] --full
+#   bash ... <repo> --add <pack>        # 팩은 필요해질 때 하나씩
 #
 # Windows PowerShell + WSL bash 사용자는 README의 bootstrap 예시를 참고.
 #
-# 갈래:
-#   product   — 제품 만드는 레포. PRD + ARCH + 디자인 가이드 깔림.
-#               kind=web 면 루트 DESIGN.md(Google Labs alpha 형식), mobile 면 docs/UI_GUIDE.md, backend 면 생략.
-#   learning  — 공부·리서치 레포 (예: harness-engineering).
-#               ROADMAP + BACKLOG + references/ + experiments/ + notes/.
-#   tooling   — 스킬·스크립트·런타임 유지보수 레포.
-#               ROADMAP + BACKLOG + changesets/ + 검증 checklist.
-#   workflow  — 반복 업무 자동화 (세무·회계·운영).
-#               DOMAIN + playbooks/ + data/(gitignored) + outputs/(gitignored) + config/sources.md.
+# **아무것도 묻지 않고 코어만 깐다** (2026-07-23, OI1). 코어 11개 —
+#   CLAUDE.md · AGENTS.md · ROADMAP.md · docs/BACKLOG.md · docs/adr/README.md
+#   changesets/{README,CHANGESET_TEMPLATE}.md · templates/PLAN_TEMPLATE.md
+#   .harness/manifest.json
 #
-# 공통: CLAUDE.md + AGENTS.md + ROADMAP.md + BACKLOG.md + docs/adr/.
+# 그 밖의 모든 것은 **lazy** — 필요해지는 시점에 `--add <pack>` 로:
+#   product     docs/PRD.md · docs/ARCHITECTURE.md            (+ design 은 별도 팩)
+#   design      DESIGN.md + lint hook (web) — design-pack 위임
+#   ui-mobile   docs/UI_GUIDE.md
+#   analysis    references/ + ANALYSIS_TEMPLATE
+#   experiments experiments/                 notes  notes/
+#   workflow    docs/DOMAIN.md · playbooks/ · config/sources.md · data/ · outputs/
+#
+# 왜 안 묻나: 폴더를 미리 깔지 않으므로 부팅 시점에 갈래를 정할 실체가 없다. 무엇이
+# 필요한지는 `/harness-plan` spec readiness 가 그 문서를 실제로 요구하는 시점에 안다 — 부팅 때 추측하면
+# 틀리고, 틀린 추측이 레포 정체성 문서에 박힌다. 구 `--mode` 4갈래는 2026-07-06 폐지됐는데
+# 표기가 남아 폐지된 어휘를 신규 레포로 계속 출하했다(실측: 50개 중 15개 오염, OI1 step-1).
+#
+# 완료 판정 문구(CLAUDE.md 의 judge 한 줄)는 코어에 남지만 **중립 1종**이다 — 무엇으로
+# 검증할지는 작업마다 `/harness-plan` 계획 분해(스캐폴딩 결정)의 `검증` 항목이 정한다. 레포 하나가 한 갈래일
+# 것을 전제하지 않는다(이 레포만 해도 tooling·learning 양쪽이다).
+#
 # (pre-commit hallucinated-path hook 은 2026-06-20 제거 — changeset 20260620-drop-ai-readiness-precommit.
 #  cartography scorer 가 gitignored references/ 클론 + 타repo 인용을 오탐해 게이트로 부적합.)
-# CLAUDE.md 의 judge 강제 한 줄이 갈래마다 다름 (judge 위치 = 종 분류, v2.0).
-#
-# 레거시 플래그 (--prd / --arch / --ui) 는 --mode product 의 alias 로 호환 처리.
 #
 # 멱등(idempotent). 같은 레포에 다시 돌려도 안전.
 
@@ -30,23 +38,24 @@ set -e
 
 REPO=""
 FULL=0
-PRD=0; ARCH=0; UI=0    # legacy
-MODE=""
-KIND=""
-LEGACY_USED=0
+ADD_PACKS=()
+
+# 폐지된 인자는 **조용히 무시하지 않는다** — 낡은 호출자를 드러내려면 실패해야 한다.
+retired_arg() {
+  echo "[error] '$1' 은 폐지됐다 (2026-07-23, OI1)." >&2
+  echo "        부팅은 갈래를 묻지 않고 코어만 깐다: bash init-ai-readiness.sh <repo> --full" >&2
+  echo "        산출물별 파일은 필요할 때: --add <product|design|ui-mobile|analysis|experiments|notes|workflow|cascade>" >&2
+  exit 2
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --full) FULL=1; shift ;;
-    --prd)  PRD=1;  LEGACY_USED=1; shift ;;
-    --arch) ARCH=1; LEGACY_USED=1; shift ;;
-    --ui)   UI=1;   LEGACY_USED=1; shift ;;
-    --mode) MODE="$2"; shift 2 ;;
-    --mode=*) MODE="${1#--mode=}"; shift ;;
-    --kind) KIND="$2"; shift 2 ;;
-    --kind=*) KIND="${1#--kind=}"; shift ;;
+    --add) ADD_PACKS+=("$2"); shift 2 ;;
+    --add=*) ADD_PACKS+=("${1#--add=}"); shift ;;
+    --mode|--mode=*|--kind|--kind=*|--prd|--arch|--ui) retired_arg "${1%%=*}" ;;
     -h|--help)
-      sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) REPO="$1"; shift ;;
   esac
@@ -59,58 +68,147 @@ if [[ ! -d "$REPO/.git" ]]; then
   echo "[ok] git init (was not a repo)"
 fi
 
-# ── mode/kind 결정 ───────────────────────────────────────────────────────────
-if [[ -z "$MODE" ]]; then
-  if [[ $LEGACY_USED -eq 1 ]]; then
-    MODE="product"
-    echo "[warn] --prd/--arch/--ui 는 deprecated. --mode product 로 처리. 새 스킬은 --mode <갈래> 사용."
-  else
-    MODE="product"   # 기본
-  fi
-fi
-
-case "$MODE" in
-  product|learning|tooling|workflow) ;;
-  *) echo "[error] unknown --mode: $MODE (product|learning|tooling|workflow)" >&2; exit 2 ;;
-esac
-
-if [[ "$MODE" == "product" ]]; then
-  KIND="${KIND:-web}"
-  case "$KIND" in
-    web|mobile|backend) ;;
-    *) echo "[error] unknown --kind: $KIND (web|mobile|backend)" >&2; exit 2 ;;
+# ── 산출물 팩 (전부 lazy — 부팅은 코어만 깐다) ────────────────────────────────
+VALID_PACKS="product design ui-mobile analysis experiments notes workflow cascade"
+for pack in "${ADD_PACKS[@]:-}"; do
+  [[ -z "$pack" ]] && continue
+  case " $VALID_PACKS " in
+    *" $pack "*) ;;
+    *) echo "[error] unknown --add: $pack ($VALID_PACKS)" >&2; exit 2 ;;
   esac
-  # --full + product 면 PRD/ARCH/UI 자동 on (legacy 가 없을 때)
-  if [[ $FULL -eq 1 && $LEGACY_USED -eq 0 ]]; then
-    PRD=1; ARCH=1
-    [[ "$KIND" != "backend" ]] && UI=1
-  fi
-elif [[ -n "$KIND" ]]; then
-  echo "[warn] --kind 는 --mode product 한정. 무시됨."
-fi
+done
+
+has_pack() {
+  local want="$1" p
+  for p in "${ADD_PACKS[@]:-}"; do [[ "$p" == "$want" ]] && return 0; done
+  return 1
+}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TPL="$SCRIPT_DIR/templates"
+# 계획 템플릿(PLAN)의 정본은 레포 루트 `templates/` 하나다.
+# 2026-07-22 (SS3 step-3) 이전에는 `scripts/templates/` 에도 같은 사본이 있었고,
+# 그 사본이 갈라져 신규 레포가 받은 PLAN 템플릿이 plan 게이트를 통과 못 했다.
+CASCADE_TPL="$SCRIPT_DIR/../templates"
+SCORER="$HOME/.codex/skills/ai-readiness-cartography/scripts/score.py"
+if [[ ! -f "$SCORER" ]]; then
+  SCORER="$HOME/.claude/skills/ai-readiness-cartography/scripts/score.py"
+fi
+HAS_SCORER=1
+if [[ ! -f "$SCORER" ]]; then
+  HAS_SCORER=0
+  echo "[warn] ai-readiness-cartography 스킬 미설치 — skeleton 생성은 계속, 스코어링은 skip"
+  echo "       활성화하려면: /skill-toggle ai-readiness-cartography on"
+fi
 
 PROJECT_NAME="$(basename "$REPO")"
 
-echo "[info] mode=$MODE${KIND:+ kind=$KIND} repo=$PROJECT_NAME"
+echo "[info] repo=$PROJECT_NAME${ADD_PACKS[*]:+ add=${ADD_PACKS[*]}}"
+
+# --- 형제 레포 해석 (MM2 step-2, 2026-07-21) -------------------------------
+# 정본 규칙은 `scripts/sibling_repo.py` 다. 셸에서는 파이썬을 import 할 수 없어
+# 동등 규칙을 여기 옮긴다 — 순서가 갈리면 기기별로 다른 답이 나오므로, 바꿀 때는
+# 두 곳을 함께 고친다(해석 순서: $HARNESS_SIBLING_ROOT → 이 스크립트의 레포 형제
+# → ~/projects → %USERPROFILE%/projects).
+sibling_roots() {
+  local self_repo
+  self_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || self_repo=""
+  local roots=()
+  [[ -n "${HARNESS_SIBLING_ROOT:-}" ]] && roots+=("$HARNESS_SIBLING_ROOT")
+  [[ -n "$self_repo" ]] && roots+=("$(dirname "$self_repo")")
+  [[ -n "${HOME:-}" ]] && roots+=("$HOME/projects")
+  [[ -n "${USERPROFILE:-}" ]] && roots+=("$USERPROFILE/projects")
+  printf '%s
+' "${roots[@]}"
+}
+
+# 의존물을 못 찾았을 때: 기본은 경고(부트스트랩 자체는 계속 — 그 기기에 없는 게
+# 정상인 선택 기능이다). HARNESS_BOOTSTRAP_STRICT=1 이면 즉시 실패해 CI·검증에서
+# 누락을 잡을 수 있다. 어느 쪽이든 **조용히 지나가지는 않는다**.
+missing_dependency() {
+  local what="$1" hint="$2"
+  if [[ "${HARNESS_BOOTSTRAP_STRICT:-0}" == "1" ]]; then
+    echo "[error] $what 을(를) 찾지 못했다 — $hint" >&2
+    echo "        해석 순서: \$HARNESS_SIBLING_ROOT → 스크립트 레포의 형제 → ~/projects" >&2
+    exit 1
+  fi
+  echo "[warn] $what 없음 — 관련 단계 skip ($hint)"
+}
+
+locate_design_pack() {
+  # design-pack = 구 design-manual 툴링 (2026-07-17 custom-skills/harness-bootstrap/design-pack 이관)
+  local candidates=(
+    "${DESIGN_HARNESS_ROOT:-}"
+    "${DESIGN_MANUAL_ROOT:-}"
+    "$HOME/.claude/skills/harness-bootstrap/design-pack"
+    "$HOME/.codex/skills/harness-bootstrap/design-pack"
+  )
+  local base
+  while IFS= read -r base; do
+    [[ -n "$base" ]] && candidates+=("$base/custom-skills/harness-bootstrap/design-pack")
+  done < <(sibling_roots)
+  local p
+  for p in "${candidates[@]}"; do
+    if [[ -n "$p" && -f "$p/scripts/init-design.sh" && -f "$p/scripts/lint/index.js" ]]; then
+      printf '%s\n' "$p"
+      return
+    fi
+  done
+}
+
+bootstrap_web_design_system() {
+  local design_repo style stack init_script lint_script
+
+  if compgen -G "$REPO/tokens/*.tokens.json" >/dev/null 2>&1; then
+    echo "[skip] DESIGN.md bootstrap skipped (tokens/*.tokens.json is the design SSOT)"
+    return 0
+  fi
+
+  if [[ -f "$REPO/DESIGN.md" ]]; then
+    echo "[skip] DESIGN.md 이미 있음"
+    return 0
+  fi
+
+  DESIGN_PACK_NOTE=""
+  design_repo="$(locate_design_pack || true)"
+  if [[ -z "$design_repo" ]]; then
+    missing_dependency "design-pack" "expected ~/.claude/skills/harness-bootstrap/design-pack/scripts/init-design.sh"
+    return 0
+  fi
+
+  DESIGN_PACK_NOTE=" (design-pack lint hook 설치됨)"
+  export DESIGN_PACK_NOTE
+  style="${HARNESS_DESIGN_STYLE:-minimal}"
+  stack=""
+  if [[ -f "$REPO/package.json" ]]; then
+    if grep -q '"next"[[:space:]]*:' "$REPO/package.json"; then
+      stack="nextjs"
+    elif grep -q '"vite"[[:space:]]*:' "$REPO/package.json" && grep -q '"react"[[:space:]]*:' "$REPO/package.json"; then
+      stack="vite-react"
+    fi
+  fi
+  stack="${stack:-vanilla}"
+
+  init_script="$design_repo/scripts/init-design.sh"
+  lint_script="$design_repo/scripts/lint/index.js"
+  echo "[info] web design system bootstrap via design-pack (style=$style, stack=$stack)"
+  bash "$init_script" "$REPO" --style "$style" --stack "$stack"
+  node "$lint_script" "$REPO/DESIGN.md"
+}
 
 write_harness_manifest() {
   local manifest_dir="$REPO/.harness"
   local manifest="$manifest_dir/manifest.json"
   mkdir -p "$manifest_dir"
-  python3 - "$manifest" "$MODE" "${KIND:-}" "$PROJECT_NAME" "$REPO" <<'PY'
+  python3 - "$manifest" "$PROJECT_NAME" "${ADD_PACKS[*]:-}" <<'PY'
 import datetime as dt
 import json
 import sys
 from pathlib import Path
 
 manifest = Path(sys.argv[1])
-mode = sys.argv[2]
-kind = sys.argv[3]
-project = sys.argv[4]
-repo = Path(sys.argv[5])
+project = sys.argv[2]
+added = [p for p in sys.argv[3].split() if p]
 
 if manifest.exists():
     try:
@@ -120,44 +218,25 @@ if manifest.exists():
 else:
     data = {}
 
-def detect_existing_modes(repo: Path) -> list[str]:
-    detected = []
-    if (repo / "docs" / "PRD.md").exists() or (repo / "docs" / "ARCHITECTURE.md").exists():
-        detected.append("product")
-    if (repo / "references").exists() or (repo / "experiments").exists():
-        detected.append("learning")
-    if (repo / "changesets").exists():
-        detected.append("tooling")
-    if (repo / "docs" / "DOMAIN.md").exists() and (repo / "playbooks").exists():
-        detected.append("workflow")
-    return detected
-
-existing_modes = detect_existing_modes(repo) if not manifest.exists() else []
-primary = data.get("primary_mode") or (existing_modes[0] if existing_modes else mode)
-modes = set(data.get("modes_enabled") or existing_modes)
-modes.add(mode)
-mode_kinds = dict(data.get("mode_kinds") or {})
-if kind:
-    mode_kinds[mode] = kind
-
+# 2026-07-23 (OI1 step-2): `primary_mode`/`modes_enabled`/`mode_kinds` 를 **더 이상 쓰지 않는다**.
+# 갈래 4분기는 2026-07-06 폐지됐고, 이 필드들이 그 어휘를 계속 재생산했다. 소비처는
+# `collect_harness_evidence.infer_role()` 하나뿐인데 산출물 폴더 폴백이 이미 있어 무해하다.
+# 기존 레포의 파일에 남아 있는 값은 지우지 않는다 — 남의 레포 파일을 일괄 수정하지 않는다.
+packs = sorted(set(data.get("packs_added") or []) | set(added))
 data.update(
     {
-        "schema_version": 1,
+        "schema_version": 2,
         "project": project,
-        "primary_mode": primary,
-        "modes_enabled": sorted(modes),
-        "mode_kinds": mode_kinds,
-        "last_bootstrap_mode": mode,
-        "last_bootstrap_kind": kind or None,
+        "packs_added": packs,
         "updated_at": dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).isoformat(timespec="seconds"),
         "notes": [
-            "primary_mode is the original repo orientation unless intentionally changed.",
-            "modes_enabled are additive capabilities; /harness chooses per run intent and ROADMAP target.",
+            "packs_added is a record of lazily installed artifact packs, not a repo classification.",
+            "the harness flow (/harness-plan) decides what a run needs from ROADMAP target and the work itself, never from this file.",
         ],
     }
 )
 manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-print(f"[ok] .harness/manifest.json 갱신 (primary={primary}, modes={','.join(data['modes_enabled'])})")
+print(f"[ok] .harness/manifest.json 갱신{' (packs=' + ','.join(packs) + ')' if packs else ''}")
 PY
 }
 
@@ -189,13 +268,25 @@ to_windows_path() {
   printf '%s\n' "$p"
 }
 
-# 중앙 evidence ledger 등록은 opt-in. HARNESS_EVIDENCE_REPO 를 evidence collector 가
-# 있는 레포로 설정했을 때만 동작한다. 설정 안 하면 조용히 skip (대부분의 사용자).
 locate_harness_evidence_repo() {
   if [[ -n "${HARNESS_EVIDENCE_REPO:-}" && -f "$HARNESS_EVIDENCE_REPO/scripts/collect_harness_evidence.py" ]]; then
     printf '%s\n' "$HARNESS_EVIDENCE_REPO"
     return
   fi
+  # 이 스크립트가 the-source-repo 안에 산다 — 자기 레포를 먼저 본다.
+  local self_repo candidates=()
+  self_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)" || self_repo=""
+  [[ -n "$self_repo" ]] && candidates+=("$self_repo")
+  local base
+  while IFS= read -r base; do
+    [[ -n "$base" ]] && candidates+=("$base/the-source-repo")
+  done < <(sibling_roots)
+  for p in "${candidates[@]}"; do
+    if [[ -f "$p/scripts/collect_harness_evidence.py" ]]; then
+      printf '%s\n' "$p"
+      return
+    fi
+  done
 }
 
 run_harness_evidence_collector() {
@@ -216,9 +307,18 @@ run_harness_evidence_collector() {
 
 register_harness_evidence_repo() {
   local evidence_repo config role repo_win repo_yaml
+  # 임시 경로에 부팅한 레포는 등록하지 않는다 (2026-07-23, OI1 step-4).
+  # 등록은 **영구**인데 검증용 레포는 곧 지워진다 — 그 비대칭이 실제로 쌓였다:
+  # `repos.local.yaml` 에서 죽은 임시 레포 19건이 나왔고 6건은 이전 세션(MM8·SS3)의
+  # 부트스트랩 테스트 잔해였다. 게이트를 검증할 때마다 설정이 더러워지면 검증을 피하게 된다.
+  case "$REPO" in
+    */scratchpad/*|*/Temp/*|*/tmp/*|/tmp/*)
+      echo "[skip] harness evidence 등록 — 임시 경로 (검증용 레포는 영구 등록하지 않는다)"
+      return ;;
+  esac
   evidence_repo="$(locate_harness_evidence_repo || true)"
   if [[ -z "$evidence_repo" ]]; then
-    [[ -n "${HARNESS_EVIDENCE_REPO:-}" ]] && echo "[warn] HARNESS_EVIDENCE_REPO 에 collector 없음 — 등록 skip"
+    missing_dependency "harness evidence collector" "expected <sibling>/the-source-repo/scripts/collect_harness_evidence.py"
     return
   fi
   config="${HARNESS_EVIDENCE_CONFIG:-$evidence_repo/evidence/repos.local.yaml}"
@@ -230,7 +330,7 @@ register_harness_evidence_repo() {
 
   repo_win="$(to_windows_path "$REPO")"
   repo_yaml="${repo_win//\\/\\\\}"
-  role="$MODE"
+  role="unknown"   # 갈래 분류 폐지(2026-07-23) — evidence collector 가 산출물 폴더로 판정한다
 
   if grep -Fq "path: \"$repo_win\"" "$config" 2>/dev/null \
     || grep -Fq "path: \"$repo_yaml\"" "$config" 2>/dev/null \
@@ -268,19 +368,43 @@ create_agents_md() {
 
 공통 원칙은 홈 스코프 AGENTS.md 에서 이미 로드됐다고 가정한다. 여기서는 중복하지 않는다.
 
-## 프로젝트 규칙
+## Peer agent adapter
 
-이 프로젝트의 상세 규칙·구조·관례는 같은 디렉토리의 \`CLAUDE.md\`에 있다.
-세션 시작 시 반드시 \`./CLAUDE.md\` 와 \`./ROADMAP.md\`(있으면)를 읽고 시작할 것.
+이 프로젝트는 Claude 와 Codex 를 동등한 peer agent 로 운용한다. 어느 쪽도 영구 orchestrator 가 아니며, 현재 task 를 잡은 session owner 가 계획·수정·검증·커밋·handoff 를 소유한다.
 
-- \`CLAUDE.md\`: 프로젝트 기술 스택, 구조, 개발 명령어, 보호 파일 / 금지 사항, 기타 이 프로젝트 고유의 작업 방식
-- \`ROADMAP.md\`: 현재 horizon·active milestone·다음 할 일. milestone 완료·compact 는 \`/harness\` 소유
-- \`BACKLOG.md\`: 완료·보류·아카이브된 milestone 압축 이력. \`/harness\` 의 ROADMAP.md 150줄 budget 유지용
-- \`session-end\`: ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 \`CLAUDE.local.md\` handoff 에만 반영
+\`CLAUDE.md\` 는 파일명과 무관하게 프로젝트 공유 brief 이고, 이 파일은 Codex 가 그 공유 brief 를 자기 런타임에서 안전하게 실행하기 위한 adapter 이다. 세션 시작 시 반드시 \`./CLAUDE.md\`, \`./ROADMAP.md\`(있으면), \`./HANDOFF.md\`(있으면 — git-tracked 핸드오프), \`./CLAUDE.local.md\`(있으면 — 기기-로컬 사실)를 읽고 시작한다.
+
+- \`CLAUDE.md\`: 프로젝트 공유 brief — 기술 스택, 구조, 개발 명령어, 보호 파일 / 금지 사항, 기타 이 프로젝트 고유의 작업 방식
+- \`AGENTS.md\`: Codex runtime adapter — Claude-only 표면을 Codex-safe 실행 방식으로 번역
+- \`ROADMAP.md\`: active milestone·다음 할 일. milestone 완료·compact 는 \`/harness-done\` 소유
+- \`docs/BACKLOG.md\`: 완료·보류·아카이브된 milestone 압축 이력. \`/harness-done\` 의 ROADMAP.md 150줄 budget 유지용
+- \`session-end\`: ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 \`HANDOFF.md\` handoff(git-tracked, 단독 커밋+push)에만 반영
+- **완료 계약**: 작업 단위 산출물 기본 = changeset — milestone 당 README 1개(step 은 절, 기록-합본) + 인덱스 행. **1 step = 1 commit** — 커밋까지가 완료
 
 \`CLAUDE.md\`의 내용 중 Claude 전용 도구 호출 규칙은 Codex 환경에 맞게 해석하되, 프로젝트 구조·규칙은 그대로 따른다.
+
+## Context landmarks
+
+이 파일은 root landmark다. repo가 커져 root 설명만으로 부족해지면 하위 디렉터리에도 scoped \`AGENTS.md\`를 둔다.
+
+추가 후보 기준:
+- 하위 디렉터리가 별도 stack/config/test/deploy 규칙을 가진다.
+- 파일 수·깊이·symbol/reference 중심성이 높아 수정 전 반드시 읽어야 한다.
+- agent가 반복해서 잘못된 파일을 고르거나 local convention을 놓친다.
+
+## Role lanes
+
+큰 작업의 planning/review에서는 역할을 이름 붙여 분리한다.
+
+- explorer: 관련 파일·규칙·선례를 찾는다.
+- planner: 결정·의존성·작업 순서를 검토한다.
+- reviewer: diff 품질·scope drift·maintainability를 반박한다.
+- qa: 실행 증거·failure mode·smoke를 확인한다.
+- gate: 완료 주장과 evidence를 최종 대조한다.
+
+role lane은 자동 subagent/team 실행을 뜻하지 않는다. 도구가 가능하고 위험도가 맞을 때만 위임하고, 기본은 같은 세션에서 lane별로 분리 검토한다.
 EOF
-  echo "[ok] AGENTS.md skeleton 생성 (Codex stub)"
+  echo "[ok] AGENTS.md skeleton 생성 (Codex runtime adapter)"
 }
 
 create_roadmap_md() {
@@ -290,34 +414,32 @@ create_roadmap_md() {
     return
   fi
 
-  case "$MODE" in
-    product)
-      cat > "$target" <<'EOF'
+  cat > "$target" <<'EOF'
 # ROADMAP
 
 > 마지막 업데이트: YYYY-MM-DD
-> 상태: product horizon
-> 북극성: {CLAUDE.md 의 궁극 목표 한 줄}
+> 상태: {이 레포가 지금 무엇을 하고 있나 한 줄}
+> 북극성: {`CLAUDE.md` 맨 위 「북극성」 절의 한 줄 — 비어 있으면 그것부터 사용자와 세운다}
 > line budget: <=150
 
-## Current Horizon
+## 북극성 요약
 
-<!-- harness:goal id="product-horizon" -->
-목표: {이번 horizon 의 제품/기술 목표 한 줄}
+<!-- harness:goal id="north-star" -->
+목표: {CLAUDE.md 「북극성」 절의 한 줄 요약 — 방향이 바뀔 때만 갱신}
 
 ## Active Milestones
 
 <!-- harness:milestone id="M1" status="active" priority="P0" -->
-### M1 — {제목, 예: MVP 골격}
-- DoD: {측정 가능한 완료 기준}
-- Evidence: {테스트/빌드/문서/로그 경로}
+### M1 — {제목}
+- DoD: {측정 가능한 완료 기준 — 무엇을 돌려 무엇을 확인하면 끝인가}
+- Evidence: {그 확인이 남는 자리 — 테스트·로그·문서 경로}
 - Gap: {왜 이 milestone 이 필요한가}
 - Status: [ ]
 
 <!-- harness:milestone id="M2" status="pending" priority="P1" -->
 ### M2 — {제목}
 - DoD: {측정 가능한 완료 기준}
-- Evidence: {테스트/빌드/문서/로그 경로}
+- Evidence: {경로}
 - Gap: {왜 필요한가}
 - Status: [ ]
 
@@ -325,65 +447,21 @@ create_roadmap_md() {
 - {아직 active 는 아닌 후보}
 
 ## Archive Pointer
-완료 이력은 `BACKLOG.md` 참조. ROADMAP.md 는 150줄 이하 current horizon 만 유지한다. milestone 완료·compact 는 `/harness` 가 `roadmap_sync.py` 로 처리한다.
+완료 이력은 `docs/BACKLOG.md` 참조. ROADMAP.md 는 150줄 이하 상태판만 유지한다. milestone 완료·compact 는 `/harness-done` 이 처리한다.
 
 ## 의사결정 이력
 "왜 X 안 함?", "왜 Y를 미룸?" 같은 의도적 제외는 `docs/adr/` 에 ADR 로.
 EOF
-      ;;
-    learning)
-      cp "$TPL/learning/ROADMAP.md" "$target"
-      ;;
-    tooling)
-      cp "$TPL/tooling/ROADMAP.md" "$target"
-      ;;
-    workflow)
-      cat > "$target" <<'EOF'
-# ROADMAP
-
-> 마지막 업데이트: YYYY-MM-DD
-> 상태: workflow horizon
-> 북극성: {CLAUDE.md 의 궁극 목표 한 줄}
-> line budget: <=150
-
-## Current Horizon
-
-<!-- harness:goal id="workflow-horizon" -->
-목표: {이번 horizon 의 운영/자동화 목표 한 줄}
-
-## Active Milestones
-
-<!-- harness:milestone id="M1" status="active" priority="P0" -->
-### M1 — {제목, 예: 핵심 도메인 기준 확정}
-- DoD: {측정 가능한 완료 기준}
-- Evidence: {DOMAIN/playbook/output/tool-call 경로}
-- Gap: {왜 이 milestone 이 필요한가}
-- Status: [ ]
-
-<!-- harness:milestone id="M2" status="pending" priority="P1" -->
-### M2 — {제목, 예: 첫 playbook 실전 적용}
-- DoD: {측정 가능한 완료 기준}
-- Evidence: {run.json/tool-calls/result 경로}
-- Gap: {왜 필요한가}
-- Status: [ ]
-
-## Next Candidates
-- {아직 active 는 아닌 후보}
-
-## Archive Pointer
-완료 이력은 `BACKLOG.md` 참조. ROADMAP.md 는 150줄 이하 current horizon 만 유지한다. milestone 완료·compact 는 `/harness` 가 `roadmap_sync.py` 로 처리한다.
-
-## 의사결정 이력
-"왜 X 기준을 씀?", "왜 Y 도구를 제외함?" 같은 의도적 선택은 `docs/adr/` 에 ADR 로.
-EOF
-      ;;
-  esac
-  echo "[ok] ROADMAP.md skeleton 생성 (mode=$MODE)"
+  echo "[ok] ROADMAP.md skeleton 생성"
 }
 
 create_backlog_md() {
-  local target="$REPO/BACKLOG.md"
-  if [[ -f "$target" ]]; then
+  # UD3 step-1: BACKLOG.md scaffolds into docs/ (deeper — archive, not
+  # discoverability-critical). New repos use this path;
+  # pre-relocation repos may still carry a root BACKLOG.md (step-2 fleet migration).
+  local target="$REPO/docs/BACKLOG.md"
+  mkdir -p "$REPO/docs"
+  if [[ -f "$target" || -f "$REPO/BACKLOG.md" ]]; then
     echo "[skip] BACKLOG.md 이미 있음"
     return
   fi
@@ -391,7 +469,7 @@ create_backlog_md() {
   cat > "$target" <<'EOF'
 # BACKLOG
 
-> 완료·보류·아카이브된 milestone 의 압축 이력. `ROADMAP.md` 는 current horizon 만 담고 150줄 이하로 유지한다.
+> 완료·보류·아카이브된 milestone 의 압축 이력. `ROADMAP.md` 는 현재 상태판만 담고 150줄 이하로 유지한다.
 
 ## Completed
 
@@ -405,63 +483,80 @@ create_backlog_md() {
 
 - 완료 milestone 은 3~5줄로 압축한다: 완료일, 결과, evidence, 남은 gap.
 - active/pending milestone 은 자동 아카이브하지 않는다.
-- 이 파일과 ROADMAP.md 의 쓰기 소유자는 `/harness` 이다. `session-end` 는 ROADMAP 을 read-only 로 확인한다.
+- 이 파일과 ROADMAP.md 의 쓰기 소유자는 하네스 흐름(`/harness-done`)이다. `session-end` 는 ROADMAP 을 read-only 로 확인한다.
 EOF
-  echo "[ok] BACKLOG.md skeleton 생성"
+  echo "[ok] docs/BACKLOG.md skeleton 생성"
 }
 
 # ── 1. (제거됨) pre-commit hallucinated-path hook ────────────────────────────
-# pre-commit hallucinated-path hook 은 기본 설치하지 않는다 (gitignored 클론 +
-# 타repo 인용을 오탐해 솔로 repo 커밋을 막는 false-gate 가 되기 쉬움).
+# 2026-06-20: 자동 hook 설치 제거. cartography scorer 가 gitignored references/
+# 클론 + 타repo 인용을 hallucinated 로 오탐해 솔로 repo 커밋을 막는 false-gate 였다.
+# 경로 정합성 점검이 필요하면 on-demand 로 /ai-readiness-cartography 를 호출한다.
 write_harness_manifest
 
 # ── 2. (--full) 공통 skeleton ────────────────────────────────────────────────
-# judge 강제 한 줄 (mode 별 — v2.0 정의의 judge 위치 차이를 박제)
-case "$MODE" in
-  product)
-    JUDGE_LINE='> 코드 변경 후 lint·테스트 통과 없이는 "완료" 보고 금지. 자동 도구가 통과하면 진실로 간주.'
-    STRUCTURE_HINT="- 신규 기능 → 항상 계획 먼저, 구현 나중\n- 굵직한 결정은 \`docs/adr/\` 에 ADR 로 보존"
-    ;;
-  learning)
-    JUDGE_LINE='> 새 reference 분석은 5섹션을 다 채우기 전에 정의 갱신·통찰 보고 금지. 인용은 출처 + 접근일 필수.'
-    STRUCTURE_HINT="- 레포 분석은 \"전체 다 읽기\" X, \`references/ANALYSIS_TEMPLATE.md\` 의 5섹션 채우기 O\n- 시간 박스: 레포당 90분\n- 외부 정의 5개 이상 모이기 전 자기 정의 확정 금지"
-    ;;
-  tooling)
-    JUDGE_LINE='> 스킬·런타임 변경은 targeted test/smoke/sync 증거 없이는 완료 보고 금지. 배포본까지 확인한다.'
-    STRUCTURE_HINT="- 1 tooling changeset = 1 작업 단위\n- 변경 전 영향 파일과 배포 경로를 먼저 식별\n- SKILL.md 변경 시 \`bash setup.sh\` sync + trigger acceptance + hardening parity 확인"
-    ;;
-  workflow)
-    JUDGE_LINE='> 외부 권위(법조문/기준/공식 도구) 인용 없는 수치·결론은 답변 금지. 모델 self-judgment 금지 (self-eval 천장).'
-    STRUCTURE_HINT="- 모든 출력은 \`docs/DOMAIN.md\` 의 표 또는 공식 도구 호출 결과를 인용해야 함\n- playbook 의 \`근거\` 섹션 빈 채로 commit 금지\n- 기준일 변경 시 즉시 \`docs/DOMAIN.md\` 갱신"
-    ;;
-esac
+# 완료 판정 한 줄 — **중립 1종** (2026-07-23 OI1 step-2).
+# 구 방식은 갈래마다 다른 문구를 심었고, 그게 두 가지를 고장냈다: ① 레포 하나가 한 갈래일
+# 것을 전제했다(이 레포만 해도 tooling·learning 양쪽이다) ② 폐지된 규약이 화석으로 남아
+# 계속 출하됐다 — learning 문구는 이 레포가 2026-07-17 에 폐지한 "90분 시간박스·5섹션 완주"를
+# 신규 레포에 심고 있었다. 무엇으로 검증할지는 부팅 시점이 아니라 작업 시점에 정한다.
+JUDGE_LINE='> 검증 증거(테스트·스모크·실제 구동·출처) 없이 "완료" 보고 금지. 무엇으로 검증하는지는 그 작업의 `/harness-plan` 계획 분해 스캐폴딩 결정 `검증` 항목이 정한다.'
+STRUCTURE_HINT="- 무엇을 만들든 계획 먼저, 구현 나중
+- 굵직한 결정은 \`docs/adr/\` 에 ADR 로 보존
+- 이 절은 이 레포에서 실제로 반복되는 규칙으로 채운다(비어 있으면 지운다)"
 
 if [[ $FULL -eq 1 ]]; then
   if [[ ! -f "$REPO/CLAUDE.md" ]]; then
-    cat > "$REPO/CLAUDE.md" <<EOF
+    # 북극성 절 양식 (고정 — 2026-07-24 사용자 확정. 여기 찍는 것이 형식 정본):
+#   제목 = 「## 북극성」으로 시작(꼬리말 자유), CLAUDE.md 첫 ## 절.
+#   파서 = Stop 훅 plan_position_stop — 인용구(>)·하위 제목(#)을 건너뛰고
+#   첫 일반 문단의 첫 문장을 매 턴 사용자에게 표시한다.
+#   → 북극성 본문은 인용구·하위 제목 밖의 첫 문단에, 한 문장으로 시작해야 한다.
+cat > "$REPO/CLAUDE.md" <<EOF
 # $PROJECT_NAME
 
-> 한 줄 설명. (갈래: $MODE${KIND:+ / $KIND})
+> 한 줄 설명.
+
+## 북극성 — 사용자 소유, 승인 없이 수정 금지
+
+> 이 절은 **사용자 소유**다. 에이전트는 문구 후보를 제안하고, 대화에서 확정 문구를 되읽어 **명시 승인을 받은 뒤에만** 그대로 기록한다. 승인 전 자율 수정 금지. 갱신은 **방향 자체가 바뀔 때만** — Milestone 완료는 여기를 바꾸지 않는다.
+
+{이 프로젝트가 무엇을 이루려 하는가 — 한 문장. 아직 없으면 사용자와 정하기 전까지 비워 둔다.}
+
+**성공 모습 (이게 되면 끝)**
+- {관측 가능한 상태로 2~4줄}
+
+**움직이는 축 (무엇을 끌어올리나)**
+- {지금 → 어디로, 무엇으로 재나}
 
 ## 기술 스택
--
+<!-- TODO: 채우기 전엔 빈 섹션임을 알 수 있게 표시만 두고 지우지 않는다 -->
 
 ## 프로젝트 구조
--
+<!-- TODO: 채우기 전엔 빈 섹션임을 알 수 있게 표시만 두고 지우지 않는다 -->
 
 ## 개발 명령어
 \`\`\`bash
-#
+# TODO: dev/test/build/lint 명령어를 채운다
 \`\`\`
+
+## Gotchas
+<!-- TODO: 비명백한 동작·필수 env var·알려진 함정을 채운다. 없다는 확신이 서면 이 섹션 자체를 지워도 된다. -->
 
 ## 작업 방식
 $(printf '%b' "$STRUCTURE_HINT")
 
 ## ROADMAP 운영
-- \`ROADMAP.md\` 는 current horizon / active milestone 장부이며 150줄 이하로 유지한다.
-- \`BACKLOG.md\` 는 완료·보류·아카이브된 milestone 압축 이력이다.
-- ROADMAP/BACKLOG 쓰기 소유자는 \`/harness\` 이다. milestone 완료·compact·horizon-check 는 \`roadmap_sync.py\` 로 처리한다.
-- \`session-end\` 는 ROADMAP 을 수정하지 않는다. read-only 로 확인하고 \`CLAUDE.local.md\` handoff 에만 반영한다.
+- \`ROADMAP.md\` 는 active milestone 상태판이며 150줄 이하로 유지한다.
+- \`docs/BACKLOG.md\` 는 완료·보류·아카이브된 milestone 압축 이력이다.
+- ROADMAP/BACKLOG 쓰기 소유자는 하네스 흐름이다. milestone 완료·compact 는 \`/harness-done\` 이 처리한다.
+- \`session-end\` 는 ROADMAP 을 수정하지 않는다. read-only 로 확인하고 \`HANDOFF.md\` handoff(git-tracked)에만 반영한다.
+
+## 컨텍스트 갱신 규칙
+- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일(그리고 이 레포 \`AGENTS.md\`)에 추가를 제안한다.
+- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 글로벌(\`~/.claude/CLAUDE.md\`/\`~/.codex/AGENTS.md\`)에 제안한다 — 헷갈리면 물어본다.
+- Claude 와 Codex 둘 다 지켜야 할 규칙이면 이 \`CLAUDE.md\` 와 \`AGENTS.md\` 양쪽에 추가한다(문구는 달라도 되나 내용은 일치).
+- 정기적으로(주 1회 또는 감이 안 잡힐 때) \`context-manager\` 를 "전체 점검"으로 돌려 배치 오류·drift 를 확인한다.
 
 ## ⚠ Judge 규약
 $JUDGE_LINE
@@ -469,15 +564,29 @@ $JUDGE_LINE
 ## 의사결정 이력
 "왜 X 안 함?" 같은 *의도적으로 안 한 선택*은 \`docs/adr/\` 에 ADR 로 보존.
 EOF
-    echo "[ok] CLAUDE.md skeleton 생성 (mode=$MODE)"
+    echo "[ok] CLAUDE.md skeleton 생성"
   else
-    # 기존 CLAUDE.md 위 retrofit: 통째 skip 하면 /harness §A 가 grep 하는 ## ⚠ Judge 규약 이 없어
+    # 기존 CLAUDE.md 위 retrofit: 통째 skip 하면 하네스 탐색(/harness-plan)이 grep 하는 ## ⚠ Judge 규약 이 없어
     # judge 강제가 no-op 이 된다. 제목만 없으면 append (멱등).
     if grep -q "## ⚠ Judge 규약" "$REPO/CLAUDE.md"; then
       echo "[skip] CLAUDE.md 이미 있음 (Judge 규약 존재)"
     else
       printf '\n## ⚠ Judge 규약\n%s\n' "$JUDGE_LINE" >> "$REPO/CLAUDE.md"
-      echo "[ok] CLAUDE.md 기존 — ## ⚠ Judge 규약 append (mode=$MODE)"
+      echo "[ok] CLAUDE.md 기존 — ## ⚠ Judge 규약 append"
+    fi
+
+    if grep -q "## 컨텍스트 갱신 규칙" "$REPO/CLAUDE.md"; then
+      echo "[skip] CLAUDE.md 컨텍스트 갱신 규칙 이미 있음"
+    else
+      cat >> "$REPO/CLAUDE.md" <<'CTXEOF'
+
+## 컨텍스트 갱신 규칙
+- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일(그리고 이 레포 `AGENTS.md`)에 추가를 제안한다.
+- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 글로벌(`~/.claude/CLAUDE.md`/`~/.codex/AGENTS.md`)에 제안한다 — 헷갈리면 물어본다.
+- Claude 와 Codex 둘 다 지켜야 할 규칙이면 이 `CLAUDE.md` 와 `AGENTS.md` 양쪽에 추가한다(문구는 달라도 되나 내용은 일치).
+- 정기적으로(주 1회 또는 감이 안 잡힐 때) `context-manager` 를 "전체 점검"으로 돌려 배치 오류·drift 를 확인한다.
+CTXEOF
+      echo "[ok] CLAUDE.md 기존 — ## 컨텍스트 갱신 규칙 append"
     fi
   fi
 
@@ -506,7 +615,7 @@ EOF
 fi
 
 # ── 3. PRODUCT 분기 (PRD / ARCH / UI) ────────────────────────────────────────
-if [[ "$MODE" == "product" && $PRD -eq 1 ]]; then
+if has_pack product; then
   mkdir -p "$REPO/docs"
   if [[ ! -f "$REPO/docs/PRD.md" ]]; then
     cat > "$REPO/docs/PRD.md" <<'EOF'
@@ -536,7 +645,7 @@ EOF
   fi
 fi
 
-if [[ "$MODE" == "product" && $ARCH -eq 1 ]]; then
+if has_pack product; then
   mkdir -p "$REPO/docs"
   if [[ ! -f "$REPO/docs/ARCHITECTURE.md" ]]; then
     cat > "$REPO/docs/ARCHITECTURE.md" <<'EOF'
@@ -567,9 +676,9 @@ EOF
   fi
 fi
 
-if [[ "$MODE" == "product" && $UI -eq 1 ]]; then
+if has_pack ui-mobile || has_pack design; then
   mkdir -p "$REPO/docs"
-  if [[ "$KIND" == "mobile" ]]; then
+  if has_pack ui-mobile; then
     if [[ ! -f "$REPO/docs/UI_GUIDE.md" ]]; then
       cp "$TPL/product/UI_GUIDE_MOBILE.md" "$REPO/docs/UI_GUIDE.md"
       echo "[ok] docs/UI_GUIDE.md skeleton 생성 (mobile — RN/Flutter 톤)"
@@ -577,77 +686,12 @@ if [[ "$MODE" == "product" && $UI -eq 1 ]]; then
       echo "[skip] docs/UI_GUIDE.md 이미 있음"
     fi
   else
-    if [[ ! -f "$REPO/DESIGN.md" ]]; then
-      cat > "$REPO/DESIGN.md" <<'EOF'
----
-name: "Design System"
-version: "alpha"
-description: "{한 줄 톤 — 예: 도구처럼 보이는 대시보드, 마케팅 페이지 아님}"
-
-colors:
-  bg: "#0a0a0a"
-  surface: "#141414"
-  text: "#ffffff"
-  textMuted: "#a3a3a3"
-  accent: "#22c55e"
-  danger: "#ef4444"
-
-typography:
-  heading: { fontFamily: "system-ui, sans-serif", fontWeight: 700 }
-  body: { fontFamily: "system-ui, sans-serif", fontSize: "16px", lineHeight: "1.6" }
-
-spacing:
-  sm: "8px"
-  md: "16px"
-  lg: "24px"
-
-rounded:
-  none: "0px"
-  pill: "999px"
----
-
-# Design System
-
-> Google Labs DESIGN.md (alpha) 형식 — 도구(Claude Code·Cursor·Stitch)가 레포 루트에서 자동으로 읽는다.
-> 본격 시스템(aesthetic family + lint + VRT)은 `/design-bootstrap` 으로 채운다.
-
-## Overview
-{이 제품의 시각 언어 한 문단. 예: "도구처럼 보여야 한다 — 매일 쓰는 대시보드, 마케팅 페이지가 아니라."}
-
-## Colors
-무채색 베이스 + accent 1톤. 보라/인디고 클리셰 금지.
-
-## Typography
-헤딩 {폰트·weight}. 본문 {폰트·size·line-height}.
-
-## Layout
-spacing scale 고정 — {예: 4·8·16·24·48}. container max·여백 규칙 여기.
-
-## Shapes
-border-radius {예: 0 / 999px 만 — 디폴트 8·12px 금지}.
-
-## Components
-{버튼·카드·인풋 규칙 — /design-bootstrap 이 채움}
-
-## Do's and Don'ts
-하지 마라 (AI 슬롭 안티패턴 — 팀의 디자인 매뉴얼이 있으면 거기에 맞춰 확장):
-- `backdrop-filter: blur()` — glassmorphism = AI 템플릿의 가장 흔한 징후
-- 배경 그라데이션 텍스트 — AI SaaS 랜딩 1번 특징
-- "Powered by AI" 배지 — 장식, 가치 없음
-- box-shadow 글로우 애니메이션 — 네온 글로우 = 슬롭
-- 보라/인디고 브랜드 색 — "AI = 보라" 클리셰
-- 모든 카드 동일 `rounded-2xl` — 균일 둥근 모서리 = 템플릿
-- 배경 gradient orb (`blur-3xl`)
-EOF
-      echo "[ok] DESIGN.md (root) skeleton 생성 (web — Google Labs DESIGN.md alpha 형식)"
-    else
-      echo "[skip] DESIGN.md 이미 있음"
-    fi
+    bootstrap_web_design_system
   fi
 fi
 
 # ── 4. LEARNING 분기 ─────────────────────────────────────────────────────────
-if [[ "$MODE" == "learning" && $FULL -eq 1 ]]; then
+if has_pack analysis; then
   # references/
   mkdir -p "$REPO/references"
   if [[ ! -f "$REPO/references/README.md" ]]; then
@@ -680,7 +724,13 @@ EOF
     echo "[skip] references/ANALYSIS_TEMPLATE.md 이미 있음"
   fi
 
-  # experiments/
+  # experiments/·notes/ 는 선행 생성하지 않는다 (CS4 2026-07-17 — fleet 실측 빈 폴더 5개).
+  # 첫 사용 시: bash init-ai-readiness.sh <repo> --add experiments|notes
+  echo "[info] experiments/·notes/ 는 lazy — 첫 실험/메모 때 '--add experiments|notes' 로 생성"
+fi
+
+# ── 4b. LAZY 팩 추가 (--add, CS4 2026-07-17) ─────────────────────────────────
+add_pack_experiments() {
   mkdir -p "$REPO/experiments"
   if [[ ! -f "$REPO/experiments/README.md" ]]; then
     cat > "$REPO/experiments/README.md" <<'EOF'
@@ -704,14 +754,13 @@ EOF
   else
     echo "[skip] experiments/README.md 이미 있음"
   fi
-  if [[ ! -f "$REPO/experiments/EXPERIMENT_TEMPLATE.md" ]]; then
+  if [[ ! -f "$REPO/experiments/EXPERIMENT_TEMPLATE.md" && -f "$TPL/learning/EXPERIMENT_TEMPLATE.md" ]]; then
     cp "$TPL/learning/EXPERIMENT_TEMPLATE.md" "$REPO/experiments/EXPERIMENT_TEMPLATE.md"
     echo "[ok] experiments/EXPERIMENT_TEMPLATE.md 생성"
-  else
-    echo "[skip] experiments/EXPERIMENT_TEMPLATE.md 이미 있음"
   fi
+}
 
-  # notes/ (자유 형식)
+add_pack_notes() {
   if [[ ! -d "$REPO/notes" ]]; then
     mkdir -p "$REPO/notes"
     touch "$REPO/notes/.gitkeep"
@@ -719,10 +768,13 @@ EOF
   else
     echo "[skip] notes/ 이미 있음"
   fi
-fi
+}
 
-# ── 5. TOOLING 분기 ──────────────────────────────────────────────────────────
-if [[ "$MODE" == "tooling" && $FULL -eq 1 ]]; then
+has_pack experiments && add_pack_experiments
+has_pack notes && add_pack_notes
+
+# ── 5. CHANGESETS (전 모드 공통 — HU2 2026-07-06: changeset = 범용 step 기록) ──
+if [[ $FULL -eq 1 ]]; then
   mkdir -p "$REPO/changesets"
   if [[ ! -f "$REPO/changesets/README.md" ]]; then
     cp "$TPL/tooling/CHANGESETS_README.md" "$REPO/changesets/README.md"
@@ -739,7 +791,7 @@ if [[ "$MODE" == "tooling" && $FULL -eq 1 ]]; then
 fi
 
 # ── 6. WORKFLOW 분기 ─────────────────────────────────────────────────────────
-if [[ "$MODE" == "workflow" && $FULL -eq 1 ]]; then
+if has_pack workflow; then
   mkdir -p "$REPO/docs"
   if [[ ! -f "$REPO/docs/DOMAIN.md" ]]; then
     cp "$TPL/workflow/DOMAIN.md" "$REPO/docs/DOMAIN.md"
@@ -830,13 +882,17 @@ EOF
 fi
 
 # ── 6.5 PLANNING CASCADE 템플릿 (공통 — 모든 갈래) ────────────────────────────
-# cascade plan docs(ADR 0007): Objective→Horizon→Milestone→Step. /harness §B0.5
-# (planning authoring) 와 §B2-scope plan doc 이 이 템플릿들을 참조하므로 갈래 무관하게 깐다.
-if [[ $FULL -eq 1 ]]; then
+# 계획 템플릿 (2계층, 2026-07-23 C4): 북극성(CLAUDE.md 절) → 작업 단위 계획서.
+# /harness-plan 의 계획 작성·계획 분해가 이 템플릿들을 참조하므로 갈래 무관하게 깐다.
+# lazy 부트스트랩 레포는 `--add cascade` 로 받는다 (2026-08-01 tax-agent 마찰 —
+# --full 전용이라 plan gate 가 요구하는 형식의 정본을 받을 길이 없었다).
+if [[ $FULL -eq 1 ]] || has_pack cascade; then
   mkdir -p "$REPO/templates"
-  for tpl in OBJECTIVE_TEMPLATE HORIZON_TEMPLATE PLAN_TEMPLATE; do
+  # OBJECTIVE_TEMPLATE 은 2026-07-23 재조립 C4 로 은퇴 — 북극성은 CLAUDE.md 절이다.
+  # REPORT_TEMPLATE 은 /harness-done 완료 보고서 3섹션 정본 — 같은 전달 경로 (2026-08-01).
+  for tpl in PLAN_TEMPLATE REPORT_TEMPLATE; do
     if [[ ! -f "$REPO/templates/$tpl.md" ]]; then
-      cp "$TPL/$tpl.md" "$REPO/templates/$tpl.md"
+      cp "$CASCADE_TPL/$tpl.md" "$REPO/templates/$tpl.md"
       echo "[ok] templates/$tpl.md 생성"
     else
       echo "[skip] templates/$tpl.md 이미 있음"
@@ -844,43 +900,45 @@ if [[ $FULL -eq 1 ]]; then
   done
 fi
 
-# ── 7. (선택) harness evidence 대상 등록 ─────────────────────────────────────
+# ── 7. 스코어 출력 ───────────────────────────────────────────────────────────
+if [[ $HAS_SCORER -eq 1 ]]; then
+  TMP_JSON="$(python3 -c "import tempfile; print(tempfile.NamedTemporaryFile(suffix='.json', delete=False).name)")"
+  trap 'rm -f "$TMP_JSON"' EXIT
+
+  echo ""
+  echo "=== AI-Readiness Score ($PROJECT_NAME) ==="
+  PYTHONIOENCODING=utf-8 python3 "$SCORER" "$REPO" --json "$TMP_JSON" 2>&1 \
+    | grep -E "^\*\*Score|^\*\*Grade|^\*\*Modules|^\| [A-G] |^- |^\| [0-9] " \
+    | head -40
+else
+  echo ""
+  echo "[info] 스코어링 skip — ai-readiness-cartography 스킬 활성화 후 재실행"
+fi
+
+# ── 8. harness evidence 대상 등록 ────────────────────────────────────────────
 echo ""
 register_harness_evidence_repo
 
 echo ""
-case "$MODE" in
-  product)
-    echo "다음 단계 (product${KIND:+/$KIND}):"
-    echo "  1. CLAUDE.md § 기술 스택 / 작업 방식 채우기"
-    echo "  2. ROADMAP.md Current Horizon·M1~M2 DoD/Evidence 채우기 (150줄 이하)"
-    echo "  3. docs/PRD.md 목표·핵심기능 채우기"
-    [[ "$KIND" == "web" ]]    && echo "  4. DESIGN.md (root) colors/typography 토큰 + Do's and Don'ts 본 시스템 맞게 채우기 (본격: /design-bootstrap)"
-    [[ "$KIND" == "mobile" ]] && echo "  4. docs/UI_GUIDE.md 색상 토큰 + 안티패턴 본 시스템 맞게 골라박기"
-    echo "  5. 첫 ADR 작성: docs/adr/0001-{title}.md"
-    echo "  운영: ROADMAP/BACKLOG 쓰기는 /harness 소유, session-end 는 read-only handoff"
-    ;;
-  learning)
-    echo "다음 단계 (learning):"
-    echo "  1. ROADMAP.md Current Horizon·M1~M3 DoD/Evidence 채우기 (150줄 이하)"
-    echo "  2. 첫 reference 분석: references/<handle>-<repo>/ 클론 후 ANALYSIS_TEMPLATE 복사"
-    echo "  3. 5섹션 다 채워야 정의 갱신·통찰 보고 가능 (judge 강제)"
-    echo "  운영: ROADMAP/BACKLOG 쓰기는 /harness 소유, session-end 는 read-only handoff"
-    ;;
-  tooling)
-    echo "다음 단계 (tooling):"
-    echo "  1. ROADMAP.md Current Horizon·T1~T2 DoD/Evidence 채우기 (150줄 이하)"
-    echo "  2. changesets/<YYYYMMDD>-<slug>/README.md 를 CHANGESET_TEMPLATE.md 로 생성"
-    echo "  3. 영향 파일·배포 경로·검증 커맨드를 changeset 에 먼저 적기"
-    echo "  4. SKILL.md 변경 시 setup.sh sync + trigger acceptance + hardening parity 확인"
-    echo "  운영: ROADMAP/BACKLOG 쓰기는 /harness 소유, session-end 는 read-only handoff"
-    ;;
-  workflow)
-    echo "다음 단계 (workflow):"
-    echo "  1. ROADMAP.md Current Horizon·M1~M2 DoD/Evidence 채우기 (150줄 이하)"
-    echo "  2. docs/DOMAIN.md 의 핵심 법규·기준일·정의 채우기"
-    echo "  3. config/sources.md 의 외부 도구 카탈로그 채우기"
-    echo "  4. 첫 playbook: playbooks/<task>.md (PLAYBOOK_TEMPLATE 복사) — 근거 섹션 필수"
-    echo "  운영: ROADMAP/BACKLOG 쓰기는 /harness 소유, session-end 는 read-only handoff"
-    ;;
-esac
+# MM8 step-1 (2026-07-21): lazy 부트스트랩(--full 없음)은 `.harness/manifest.json` 만
+# 만드는데, 아래 "다음 단계" 는 ROADMAP.md·CHANGESET_TEMPLATE.md 처럼 **설치되지 않은
+# 파일**을 가리켰다. 안내가 없는 것을 가리키면 그건 안내가 아니라 오정보다.
+# 실제 설치물을 먼저 대조해, 빠진 게 있으면 무엇을 어떻게 받는지 한 줄로 알린다.
+missing_scaffold=()
+[[ -f "$REPO/ROADMAP.md" ]] || missing_scaffold+=("ROADMAP.md")
+[[ -f "$REPO/CLAUDE.md" ]] || missing_scaffold+=("CLAUDE.md")
+[[ ! -f "$REPO/changesets/CHANGESET_TEMPLATE.md" ]] && missing_scaffold+=("changesets/CHANGESET_TEMPLATE.md")
+if (( ${#missing_scaffold[@]} > 0 )); then
+  echo "[warn] 아직 설치되지 않은 스캐폴딩: ${missing_scaffold[*]}"
+  echo "       아래 안내 중 이 파일들을 가리키는 항목은 먼저 설치해야 한다 —"
+  echo "       전체: 같은 커맨드에 --full · 부분: --add <pack>"
+  echo ""
+fi
+echo "다음 단계:"
+echo "  1. CLAUDE.md § 기술 스택 / 프로젝트 구조 / 작업 방식 채우기"
+echo "  2. CLAUDE.md 맨 위 「북극성」 절 채우기 (문구는 사용자 소유 — 승인 후에만 기록)"
+echo "  3. ROADMAP.md M1~M2 DoD/Evidence 채우기 (150줄 이하)"
+echo "  4. 첫 작업은 /harness-plan 으로 — 필요한 문서(PRD·DOMAIN·references 등)는 그때 깔린다"
+echo "  운영: ROADMAP/BACKLOG 쓰기는 하네스 흐름(/harness-done) 소유, session-end 는 read-only handoff"
+echo ""
+echo "  산출물 팩은 필요해질 때만: --add <product|design|ui-mobile|analysis|experiments|notes|workflow|cascade>"

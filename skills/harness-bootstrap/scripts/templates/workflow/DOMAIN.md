@@ -34,4 +34,4 @@
 
 ## ⚠ Judge 규약
 - 이 도메인의 모든 출력(계산·조언·문서)은 **위 표의 조항 또는 공식 도구 호출 결과를 인용** 해야 한다.
-- 모델 self-judgment 으로 결론 내리지 말 것. self-eval 천장(harness-engineering v2.0 footgun 4) 영역.
+- 모델 self-judgment 으로 결론 내리지 말 것. self-eval 천장(the-source-repo v2.0 footgun 4) 영역.

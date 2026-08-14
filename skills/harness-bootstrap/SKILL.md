@@ -1,227 +1,106 @@
 ---
 name: harness-bootstrap
-description: 새 git 레포에 AI-readiness 하네스를 부팅한다 — pre-commit hook(hallucinated path 차단) + CLAUDE.md + AGENTS.md + ROADMAP.md(current horizon, 150줄 budget) + BACKLOG.md(완료 milestone archive) + docs/adr/ + 갈래별(product/learning/tooling/workflow) 필수 파일 + harness evidence ledger 자동 등록. "하네스 깔아줘", "프로젝트 부트스트랩", "claude.md 자동생성", "AI-readiness 세팅", "신규 레포 초기화", "init harness" 등의 의도 감지 시 사용. /harness-bootstrap 호출 시 사용.
+description: 새 git 레포에 AI-readiness 하네스를 부팅하는 설치 스킬. "하네스 깔아줘", "프로젝트 부트스트랩", "AI-readiness 세팅", "신규 레포 초기화", "/harness-bootstrap"에 사용한다. CLAUDE.md·AGENTS.md·ROADMAP.md·docs/BACKLOG.md·docs/adr·changesets와 harness evidence ledger를 등록하며, 실행 규칙의 정본은 /harness-plan·/harness-run·/harness-done 3종과 custom-skills 문서다.
 ---
 
-# /harness-bootstrap — 신규 프로젝트 하네스 부팅
+# /harness-bootstrap — 신규 프로젝트 하네스 부팅 (설치기)
 
-빈 git 레포(또는 기존 레포)에 AI 에이전트가 협업할 수 있는 최소 인프라를 깐다. **갈래 4개** 로 분기 — 갈래마다 *judge 위치*가 다르고(v2.0 정의), 그 차이가 필수 파일과 CLAUDE.md 의 judge 강제 한 줄에 박힌다. Codex 에서는 `AGENTS.md` 를 별도 stub 으로 생성해 `CLAUDE.md`/`ROADMAP.md` 를 읽도록 연결한다. `ROADMAP.md` 는 current horizon 과 active milestone 만 담고 150줄 이하로 유지하며, 완료 milestone 은 `BACKLOG.md` 로 압축 아카이브한다. ROADMAP/BACKLOG 쓰기 소유자는 `/harness` 이고, `session-end` 는 ROADMAP 을 read-only 로 확인한 뒤 `CLAUDE.local.md` handoff 에만 반영한다.
+레포에 harness 인프라를 깐다. 이 스킬은 `init-ai-readiness.sh` 의 **interactive wrapper — 설치만 담당**한다. 작업 규칙(planning gate·role lane·산출물 계약·문서 수명·배포 검증 게이트)의 정본은 `/harness-plan`·`/harness-run`·`/harness-done` SKILL.md 3종과 custom-skills 문서이며, **여기에 복제하지 않는다** (2026-07-06 HU2 — 정책 복제가 drift 원인이었음).
 
-핵심 로직은 `~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh` (이 스킬과 함께 번들 — Codex·CI 등 다른 곳에서도 직접 호출 가능). 이 스킬은 그 위의 **interactive wrapper**.
+핵심 로직: the-source-repo `scripts/init-ai-readiness.sh` (Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — `$HARNESS_ENGINEERING_ROOT` → `~/projects/…` → 형제 디렉터리. **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
 
 ## 1) 상황 파악 (조용히, 사용자에게 묻기 전)
 
 ```bash
 git rev-parse --git-dir > /dev/null 2>&1 || echo "NOT_GIT"
 [ -f ./CLAUDE.md ]      && echo "HAS_CLAUDE_MD"
-[ -d ./docs/adr ]       && echo "HAS_ADR"
-[ -f ./docs/PRD.md ]    && echo "HAS_PRD"
-[ -f ./docs/DOMAIN.md ] && echo "HAS_DOMAIN"
 [ -f ./ROADMAP.md ]     && echo "HAS_ROADMAP"
-[ -f ./BACKLOG.md ]     && echo "HAS_BACKLOG"
 [ -f ./.harness/manifest.json ] && echo "HAS_HARNESS_MANIFEST"
-[ -f ./package.json ]   && jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | join(",")' package.json
+[ -f ./package.json ]   && jq -r '(.dependencies // {}) + (.devDependencies // {}) | keys | join(",")' package.json 2>/dev/null
 [ -d ./src ] && ls ./src 2>&1 | head -5
 ```
 
-판정:
-- `NOT_GIT` → `git init` 자동 실행 후 진행 (한 줄 알림: `[ok] git init (was not a repo)`). 사용자에게 따로 묻지 않음
-- 모든 파일 이미 있으면 → "이미 부팅됨. 추가 갈래 capability 를 더할까?" 확인. 재실행은 기존 갈래를 바꾸지 않고 `.harness/manifest.json` 의 `modes_enabled` 에 추가 기록한다.
-- 스택 추정으로 mode/kind 추정 (Q1·Q2 의 기본 선택지로):
-  - next/react/vue/svelte/astro → product/web
-  - expo/react-native/flutter → product/mobile
-  - fastapi/express/nest/cli scripts → product/backend
-  - jupyter / 실험 폴더 위주 → learning
-  - SKILL.md / setup·sync·verifier scripts 위주 (스킬·툴 유지보수 레포) → tooling
-  - playbook·data 디렉토리 + 도메인 키워드 → workflow
+- `NOT_GIT` → `git init` 자동 실행 후 진행 (한 줄 알림). 묻지 않음.
+- 이미 부팅됨(HAS_HARNESS_MANIFEST) → **묻지 않고** 멱등 재실행. 기존 파일 보존(`[skip]`), `packs_added` 누적.
+- 스택 감지 결과는 **보고에만** 쓴다(§4). 이걸로 무엇을 깔지 정하지 않는다 — 부팅은 언제나 코어만.
 
-## 2) 사용자에게 묻기
+## 2) 무엇이 깔리나 — 묻지 않는다
 
-Claude 에서 AskUserQuestion 이 가능하면 2단으로 묻는다. Codex 에서는 AskUserQuestion 을 가정하지 않는다. 스택/파일로 mode·kind 를 합리적으로 추정할 수 있으면 기본값으로 진행하고, 추정이 위험할 때만 평문 한 줄 질문으로 묻는다.
+**아무것도 묻지 않고 코어만 깐다** (2026-07-23 OI1). 코어 11개:
 
-**Q1 — 무엇을 만드는 레포?** (single-select)
-- **Product** — 출시할 무언가 (web/mobile/backend·CLI)
-- **Learning/Research** — 공부·실험·정리 (예: harness-engineering 같은 학습 레포)
-- **Tooling/Maintenance** — 스킬·스크립트·런타임 유지보수
-- **Workflow/Ops** — 반복 업무 자동화 (세무·회계·운영)
+```
+CLAUDE.md · AGENTS.md · ROADMAP.md · docs/BACKLOG.md · docs/adr/README.md
+changesets/{README,CHANGESET_TEMPLATE}.md · templates/PLAN_TEMPLATE.md
+.harness/manifest.json   (+ pre-commit hook · evidence ledger 등록)
+```
 
-**Q2 — (Product 선택 시에만) 세부 종류?** (single-select)
-- **Web app** — UI_GUIDE(web) + PRD + ARCHITECTURE
-- **Mobile app** — UI_GUIDE(mobile, RN/Flutter) + PRD + ARCHITECTURE
-- **Backend / CLI / lib** — UI_GUIDE 생략, PRD + ARCHITECTURE 만
+그 밖의 **모든 것은 lazy** — 폴더도 파일도 미리 깔지 않고, 첫 문서를 만드는 쪽이 만든다.
+배치 규약 정본 = `/harness-plan` 배치 규약 표. 계획은 `plans/`, 리서치는 `research/`,
+완료·동결 기록은 `archive/`.
 
-Learning/Tooling/Workflow 은 Q2 없이 바로 실행.
+산출물별 파일은 `/harness-plan` spec readiness 가 **그 문서를 실제로 요구하는 시점**에 받는다:
 
-## 3) 실행
+| 필요해질 때 | 커맨드 | 깔리는 것 |
+|---|---|---|
+| PRD·아키텍처를 쓸 때 | `--add product` | `docs/PRD.md` · `docs/ARCHITECTURE.md` |
+| 웹 화면을 만들 때 | `--add design` | design-pack `DESIGN.md` + lint hook (⚠ 이 배포판 미포함 — 없으면 명시적으로 실패) |
+| 모바일 UI 를 만들 때 | `--add ui-mobile` | `docs/UI_GUIDE.md` |
+| 첫 레포 분석을 쓸 때 | `--add analysis` | `references/` + ANALYSIS_TEMPLATE(5섹션) |
+| 첫 실험·메모 | `--add experiments` / `--add notes` | `experiments/` / `notes/` |
+| 첫 playbook 을 쓸 때 | `--add workflow` | `docs/DOMAIN.md` · `playbooks/` · `config/sources.md` · `data/`·`outputs/`(gitignored) |
+
+> **왜 안 묻나.** 폴더를 미리 깔지 않으므로 부팅 시점에 가를 실체가 없다. 무엇이 필요한지는
+> 그 문서를 요구하는 순간에 알고, 부팅 때 추측하면 틀린 추측이 레포 정체성 문서에 박힌다.
+> 구 4갈래 질문은 2026-07-06 폐지됐는데 **질문 의식만 남아 있었다** — 그 표기가 폐지된 어휘를
+> 신규 레포로 계속 출하해 실측 50개 중 15개를 오염시켰다(OI1 step-1). `--mode`/`--kind` 는
+> 이제 스크립트가 **exit≠0 으로 거절**한다.
+
+**§1 의 스택 추정은 묻기 위한 재료가 아니라 보고용 한 줄**이다 — 부팅은 추정과 무관하게 코어만 깐다.
+
+## 3) 실행 — **Git Bash** (WSL 아님)
 
 ```bash
-MODE="..."     # product | learning | tooling | workflow
-KIND="..."     # product 일 때만 — web | mobile | backend
-ARGS="--full --mode $MODE"
-[[ "$MODE" == "product" ]] && ARGS="$ARGS --kind $KIND"
-bash ~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh "$PWD" $ARGS
+# 스크립트 위치를 해석한다 — 홈 배치를 전제하지 않는다(MM8, 2026-07-21).
+# 없으면 조용히 넘어가지 않고 즉시 실패한다: 부트스트랩은 반쯤 되면 더 나쁘다.
+INIT=""
+for c in "$HARNESS_ENGINEERING_ROOT/scripts/init-ai-readiness.sh"          "$HOME/projects/the-source-repo/scripts/init-ai-readiness.sh"          "$(git rev-parse --show-toplevel 2>/dev/null)/../the-source-repo/scripts/init-ai-readiness.sh"; do
+  [ -f "$c" ] && INIT="$c" && break
+done
+[ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — the-source-repo 체크아웃 경로를 HARNESS_ENGINEERING_ROOT 로 지정하라"; exit 1; }
+
+bash "$INIT" "$PWD" --full
 ```
 
-실행 결과 `.harness/manifest.json` 이 생성/갱신된다:
-- `primary_mode`: 최초 또는 주된 repo orientation. 기존 값이 있으면 보존한다.
-- `modes_enabled`: bootstrap 으로 추가된 갈래 capability 목록. 재실행 시 누적된다.
-- `/harness` 는 이 manifest 를 읽되, 최종 mode 는 사용자 의도와 ROADMAP target 으로 정한다.
+- 팩은 나중에 `bash "$INIT" "$PWD" --add <pack>` 로 하나씩(복수 지정 가능). 부팅 시점에는 주지 않는다.
+- ⚠ **WSL 경로 변환(`/mnt/c/...`) 금지** — 이 환경의 bash 는 Git Bash 다. 구버전의 `/mnt/c` 지시가 실제 에러 원인이었다(2026-07-06 사용자 보고). PowerShell 에서 부르면 `bash -c "..."` 로 감싼다.
+- 출력의 `[ok]`/`[skip]`/`[warn]` 라인을 모아 보고에 사용.
 
-Windows PowerShell + WSL bash 에서는 현재 디렉터리를 WSL 경로로 변환해 넘긴다 (`~` 는 bash home 으로 풀린다):
+## 4) 보고 (한 메시지)
 
-```powershell
-$repo = (Resolve-Path .).Path -replace '\\','/' -replace '^C:','/mnt/c'
-bash -lc "~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh '$repo' --full --mode learning"
-```
+1. 생성/스킵 파일 목록 (`[ok]`/`[skip]` 요약). 감지한 스택이 있으면 한 줄로 알리되 **분류로 쓰지 않는다**.
+2. 다음 단계 2~3줄: CLAUDE.md 스택/규칙 채우기 → **북극성 세우기(§5)** → ROADMAP milestone 채우기 → 첫 작업은 `/harness-plan` 으로 (빈 spec 은 `/harness-plan` spec readiness 가 사용자와 채운다 — 지금 다 채울 필요 없음).
+3. 산출물별 파일은 **아직 없다**는 것과, `/harness-plan` 이 필요할 때 `--add <pack>` 로 받는다는 것을 한 줄로 알린다. 웹 디자인 design-pack 은 이 배포판에 포함되지 않는다 — `--add design` 은 팩이 없으면 명시적으로 실패한다.
 
-출력에서 `[ok]`/`[skip]`/`[warn]` 라인을 모아 사용자 보고에 사용.
+운영 규칙 포인터 (복제 금지): planning gate·role lanes → `/harness-plan` SKILL.md · milestone 완료·ROADMAP/BACKLOG 쓰기 소유·문서 수명(living vs record) → `/harness-done` SKILL.md. custom-skills 배포 검증(acceptance·hardening parity·evidence pack) → `custom-skills/scripts/` + docs.
 
-## 4) 후속 안내 (한 메시지로, 갈래별)
+## 5) 북극성 세우기 (설치 직후 — 건너뛰지 않는다)
 
-### Thin non-trivial planning gate
+설치가 끝나면 `CLAUDE.md` 맨 위 「북극성」 절이 채워졌는지 확인하고, **비어 있으면 그 자리에서 `/harness-plan` 계획 작성(북극성 세우기)으로 넘긴다**(문구는 사용자 소유 — 승인 후에만 기록). 부팅만 하고 북극성 없이 남겨두지 않는다 — 뒤따르는 milestone·계획서가 전부 이 절을 백링크한다. (2026-07-23 재조립 C4 로 구 `OBJECTIVE.md` 는 은퇴 — 스캐폴드가 이 절을 빈 채로 깔아 준다.)
 
-`/harness` 실행 중 non-trivial 작업은 바로 TODO로 쪼개지 않고 얇은 planning gate를 통과한다.
-
-non-trivial 기준:
-- 여러 task / 여러 file / 여러 session
-- product behavior, API, data model, 권한, 결제, 외부 연동, 배포면 변경
-- security, secret, supply chain, protected file 영향
-- 기존 spec, ROADMAP, ADR, 과거 판단과 충돌 가능성
-
-필수 planning block:
-- `team_validation_mode`: `not_required_lightweight` / `native` / `subagent` / `manual-pass` / `unavailable`
-- `spec_delta` 또는 `spec_skip_reason`
-- Product / Architecture / Security / QA / Skeptic 관점 검토
-- source code 변경이면 test/smoke/review/evidence DoD
-
-이 gate는 full Plans.md 시스템을 강제하지 않는다. 목적은 큰 작업의 drift를 막는 최소 계약이다.
-
-### Product (web/mobile)
-```
-[OK] 하네스 부팅 완료 (product / {kind})
-
-생성:
-- .git/hooks/pre-commit (hallucinated path 차단)
-- .harness/manifest.json (primary_mode + modes_enabled; 재실행 시 capability 누적)
-- CLAUDE.md (skeleton + judge 한 줄: lint·테스트 통과 강제)
-- AGENTS.md (Codex stub — CLAUDE.md/ROADMAP.md 읽기 유도)
-- ROADMAP.md (current horizon·active milestone·DoD/Evidence marker, 150줄 budget)
-- BACKLOG.md (완료·보류·아카이브 milestone 압축 이력)
-- docs/adr/README.md
-- docs/PRD.md / docs/ARCHITECTURE.md
-- {web → 루트 DESIGN.md (Google Labs DESIGN.md alpha 형식 — 도구 자동 read) / mobile → docs/UI_GUIDE.md (44pt 터치 + safe area 표)}
-다음 단계:
-1. CLAUDE.md § 기술 스택 / 작업 방식 채우기
-2. ROADMAP.md Current Horizon·M1~M2 DoD/Evidence 채우기
-3. docs/PRD.md 목표·핵심기능 채우기
-4. {web → DESIGN.md colors/typography 토큰 + Do's and Don'ts 채우기 / mobile → docs/UI_GUIDE.md 색상 토큰 + 안티패턴 3-5개 골라 박기}
-5. 첫 ADR 작성: docs/adr/0001-{title}.md
-
-※ PRD·ARCHITECTURE·핵심 결정(백엔드·인증·디자인·스코프)을 지금 직접 채워도 되고,
-  비워 두면 `/harness` 첫 product 작업의 §B0 Spec gate 가 사용자와 합의해 채운다(빈 스켈레톤 위 구현 방지).
-
-운영 규칙:
-- ROADMAP/BACKLOG 쓰기 소유자는 `/harness`
-- milestone 완료·compact·horizon-check 는 `/harness` 의 `roadmap_sync.py` 로 처리
-- `session-end` 는 ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 `CLAUDE.local.md` handoff 에만 반영
-```
-
-**web 인 경우 — 디자인 하네스 핸드오프 (AskUserQuestion 한 번):** 부팅 보고 직후 "디자인 시스템도 지금 깔까? (`/design-bootstrap` — DESIGN.md + lint + 선택 VRT)" 를 묻는다. Yes 면 바로 `/design-bootstrap` 으로 이어가고(UI_GUIDE 보다 본격적), No 면 위 3번 UI_GUIDE 만으로 충분. mobile/backend 는 묻지 않음(design-bootstrap 은 web 전용).
-
-### Product (backend)
-UI_GUIDE 줄만 빼고 동일.
-
-### Learning
-```
-[OK] 하네스 부팅 완료 (learning)
-
-생성:
-- .git/hooks/pre-commit
-- .harness/manifest.json (primary_mode + modes_enabled; 재실행 시 capability 누적)
-- CLAUDE.md (skeleton + judge 한 줄: 5섹션 다 채우기 전 통찰 보고 금지)
-- AGENTS.md (Codex stub — CLAUDE.md/ROADMAP.md 읽기 유도)
-- docs/adr/README.md
-- ROADMAP.md (current horizon·active milestone·DoD/Evidence marker, 150줄 budget)
-- BACKLOG.md (완료·보류·아카이브 milestone 압축 이력)
-- references/README.md + ANALYSIS_TEMPLATE.md (5섹션)
-- experiments/README.md + EXPERIMENT_TEMPLATE.md (4섹션)
-- notes/ (자유 형식)
-다음 단계:
-1. ROADMAP.md Current Horizon·M1~M3 DoD/Evidence 채우기
-2. 첫 reference: references/<handle>-<repo>/ 클론 후 ANALYSIS_TEMPLATE 복사
-3. 5섹션 다 채워야 정의 갱신·통찰 보고 가능 (judge 강제)
-
-운영 규칙:
-- ROADMAP/BACKLOG 쓰기 소유자는 `/harness`
-- milestone 완료·compact·horizon-check 는 `/harness` 의 `roadmap_sync.py` 로 처리
-- `session-end` 는 ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 `CLAUDE.local.md` handoff 에만 반영
-```
-
-### Tooling
-```
-[OK] 하네스 부팅 완료 (tooling)
-
-생성:
-- .git/hooks/pre-commit
-- .harness/manifest.json (primary_mode + modes_enabled; 재실행 시 capability 누적)
-- CLAUDE.md (skeleton + judge 한 줄: test/smoke/sync evidence 없이는 완료 보고 금지)
-- AGENTS.md (Codex stub — CLAUDE.md/ROADMAP.md 읽기 유도)
-- docs/adr/README.md
-- ROADMAP.md (current horizon·active milestone·DoD/Evidence marker, 150줄 budget)
-- BACKLOG.md (완료·보류·아카이브 milestone 압축 이력)
-- changesets/README.md + CHANGESET_TEMPLATE.md (1 changeset = 1 tooling step)
-다음 단계:
-1. ROADMAP.md Current Horizon·T1~T2 DoD/Evidence 채우기
-2. changesets/<YYYYMMDD>-<slug>/README.md 생성
-3. 영향 파일·source of truth·deploy/sync target·검증 커맨드 기록
-4. SKILL.md 변경 시 setup.sh sync + trigger acceptance + hardening parity 확인
-
-운영 규칙:
-- ROADMAP/BACKLOG 쓰기 소유자는 `/harness`
-- milestone 완료·compact·horizon-check 는 `/harness` 의 `roadmap_sync.py` 로 처리
-- `session-end` 는 ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 `CLAUDE.local.md` handoff 에만 반영
-```
-
-### Workflow
-```
-[OK] 하네스 부팅 완료 (workflow)
-
-생성:
-- .git/hooks/pre-commit
-- .harness/manifest.json (primary_mode + modes_enabled; 재실행 시 capability 누적)
-- CLAUDE.md (skeleton + judge 한 줄: 외부 권위 인용 없으면 답변 금지)
-- AGENTS.md (Codex stub — CLAUDE.md/ROADMAP.md 읽기 유도)
-- ROADMAP.md (current horizon·active milestone·DoD/Evidence marker, 150줄 budget)
-- BACKLOG.md (완료·보류·아카이브 milestone 압축 이력)
-- docs/adr/README.md
-- docs/DOMAIN.md (PRD 자리 — 법규·기준일·정의)
-- playbooks/README.md + PLAYBOOK_TEMPLATE.md (입력/절차/체크리스트/근거★)
-- data/ outputs/ (gitignored, .gitignore 자동 패치)
-- config/sources.md (외부 API·도구 카탈로그)
-다음 단계:
-1. ROADMAP.md Current Horizon·M1~M2 DoD/Evidence 채우기
-2. docs/DOMAIN.md 핵심 법규·기준일·정의 채우기
-3. config/sources.md 외부 도구 카탈로그 채우기 (KOSIS/DART/law-mcp 등)
-4. 첫 playbook: playbooks/<task>.md (PLAYBOOK_TEMPLATE 복사) — 근거 섹션 필수
-
-운영 규칙:
-- ROADMAP/BACKLOG 쓰기 소유자는 `/harness`
-- milestone 완료·compact·horizon-check 는 `/harness` 의 `roadmap_sync.py` 로 처리
-- `session-end` 는 ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 `CLAUDE.local.md` handoff 에만 반영
-```
+- **문구는 사용자 소유**: 에이전트는 후보 북극성 문구를 대화로 제안하고, **사용자가 명시 승인한 뒤에만** 파일에 기록한다. 승인 전 자율 작성 금지 (북극성 소유권, 2026-07-19).
+- 부팅 직후라 재료가 얇으면 북극성 설계의 **재료 수집(리서치) 단계**가 기본이다 — 생략은 "조사 불요 — <이유>" 명시 시만.
+- 사용자가 "지금 말고"라고 하면 보고 마지막 줄에 남은 숙제로 한 줄 남기고 끝낸다.
 
 ## 주의
 
-- **멱등**: 같은 디렉토리에 다시 실행해도 기존 파일은 보존 (`[skip]` 표시)
-- **git repo 가 아니면 자동 `git init`** — 사용자가 `/harness-bootstrap` 호출했다는 것 자체가 부팅 의도. 묻지 말고 init 후 진행
-- **갈래 선택 후 재실행은 additive** — 다른 갈래로 다시 부팅하면 새 갈래 파일이 *추가* 되고 `.harness/manifest.json` 의 `modes_enabled` 에 누적된다(기존 파일은 안 지움). `primary_mode` 는 자동 변경하지 않는다. `/harness` 는 파일 존재만으로 전체 모드를 바꾸지 말고 이번 run 의 의도와 ROADMAP target 으로 선택한다. primary 자체를 바꾸려면 사용자 승인 후 ROADMAP/manifest/불필요 파일 정리를 별도 migration 으로 처리한다.
-- 다른 AI 도구 (Codex 등) 에서 같은 부팅이 필요하면 스크립트를 직접 호출하라고 안내. Windows PowerShell 에서는 위의 WSL 절대 경로 예시를 우선 사용:
-  `bash ~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh <repo> --full --mode <product|learning|tooling|workflow> [--kind <web|mobile|backend>]`
+- **멱등 + additive**: 재실행해도 기존 파일 보존. 팩 추가는 manifest `packs_added` 에 누적된다 — 이건 *기록*이지 레포 분류가 아니다(분류 개념은 2026-07-23 폐지).
+- repo 가 크거나 구조가 바뀌면 nested `AGENTS.md`/`CLAUDE.md` landmark 후보를 보고에 남긴다 (생성 규칙 정본은 `/harness-plan`·context-manager).
 
 ## 짝 스킬
-- `/design-bootstrap` — Product/web 인 경우 UI_GUIDE 보다 더 본격적인 디자인 시스템 (lint + VRT 포함). product/web 부팅 후 흐름 권장
-- `/skill-creator` — 부팅 후 프로젝트 전용 스킬 만들 때
+
+- `/harness-plan` → `/harness-run` → `/harness-done` — 부팅 후 실제 작업 흐름(계획→구현·렌더 검증→마감)
+- `/skill-creator` — 부팅 후 프로젝트 전용 스킬
 
 ## 출처
-- jha0313/harness_framework 의 docs/{PRD,ARCHITECTURE,UI_GUIDE,ADR}.md 템플릿 흡수
-- 갈래 4분기·judge 위치 차이는 harness-engineering 정의 작업에서 도출 (자세한 배경은 패키지 README 참조)
+
+- jha0313/harness_framework 템플릿 흡수 (2026-05-14) · 4분기 질문 → 산출물 팩 (2026-07-06 HU2) → **팩 선택 질문까지 제거·전면 lazy** (2026-07-23 OI1, one-invocation-harness horizon)
