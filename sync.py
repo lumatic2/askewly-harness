@@ -148,6 +148,17 @@ P = [
     ("session-end/SKILL.md", r"## 4\. 출력", "## 3. 출력", 1),
     ("session-end/SKILL.md", r"\bvault\b", "저널", 1),
     ("session-log/SKILL.md", r"\bvault\b", "저널", 0),
+    # harness-bootstrap: 엔진 탐색 사슬 재작성 — 공개판은 스크립트를 번들하므로
+    # 번들 경로가 1순위, 외부 체크아웃($HARNESS_ENGINEERING_ROOT)은 opt-in 폴백 (step-2)
+    ("harness-bootstrap/SKILL.md",
+     r"핵심 로직: harness-engineering `scripts/init-ai-readiness\.sh` \(Codex·CI 등 어디서든 호출 가능\)\. 경로는 §3 의 해석 사슬로 찾는다 — `\$HARNESS_ENGINEERING_ROOT` → `~/projects/…` → 형제 디렉터리\.",
+     "핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$HARNESS_ENGINEERING_ROOT`(opt-in).", 1),
+    ("harness-bootstrap/SKILL.md",
+     r'"\$HARNESS_ENGINEERING_ROOT/scripts/init-ai-readiness\.sh"\s+"\$HOME/projects/harness-engineering/scripts/init-ai-readiness\.sh"\s+"\$\(git rev-parse --show-toplevel 2>/dev/null\)/\.\./harness-engineering/scripts/init-ai-readiness\.sh"',
+     '"$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "${HARNESS_ENGINEERING_ROOT:-/nonexistent}/scripts/init-ai-readiness.sh"', 1),
+    ("harness-bootstrap/SKILL.md",
+     r"init-ai-readiness\.sh 를 못 찾았다 — harness-engineering 체크아웃 경로를 HARNESS_ENGINEERING_ROOT 로 지정하라",
+     "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라", 1),
     # harness-bootstrap: design-pack 은 공개판 미포함 — 참조에 표기
     ("harness-bootstrap/SKILL.md",
      r"\| `--add design` \| design-pack `DESIGN\.md` \+ lint hook \|",

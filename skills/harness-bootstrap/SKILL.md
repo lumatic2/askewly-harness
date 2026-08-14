@@ -7,7 +7,7 @@ description: 새 git 레포에 AI-readiness 하네스를 부팅하는 설치 스
 
 레포에 harness 인프라를 깐다. 이 스킬은 `init-ai-readiness.sh` 의 **interactive wrapper — 설치만 담당**한다. 작업 규칙(planning gate·role lane·산출물 계약·문서 수명·배포 검증 게이트)의 정본은 `/harness-plan`·`/harness-run`·`/harness-done` SKILL.md 3종과 custom-skills 문서이며, **여기에 복제하지 않는다** (2026-07-06 HU2 — 정책 복제가 drift 원인이었음).
 
-핵심 로직: the-source-repo `scripts/init-ai-readiness.sh` (Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — `$HARNESS_ENGINEERING_ROOT` → `~/projects/…` → 형제 디렉터리. **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
+핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$HARNESS_ENGINEERING_ROOT`(opt-in). **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
 
 ## 1) 상황 파악 (조용히, 사용자에게 묻기 전)
 
@@ -63,10 +63,10 @@ changesets/{README,CHANGESET_TEMPLATE}.md · templates/PLAN_TEMPLATE.md
 # 스크립트 위치를 해석한다 — 홈 배치를 전제하지 않는다(MM8, 2026-07-21).
 # 없으면 조용히 넘어가지 않고 즉시 실패한다: 부트스트랩은 반쯤 되면 더 나쁘다.
 INIT=""
-for c in "$HARNESS_ENGINEERING_ROOT/scripts/init-ai-readiness.sh"          "$HOME/projects/the-source-repo/scripts/init-ai-readiness.sh"          "$(git rev-parse --show-toplevel 2>/dev/null)/../the-source-repo/scripts/init-ai-readiness.sh"; do
+for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "${HARNESS_ENGINEERING_ROOT:-/nonexistent}/scripts/init-ai-readiness.sh"; do
   [ -f "$c" ] && INIT="$c" && break
 done
-[ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — the-source-repo 체크아웃 경로를 HARNESS_ENGINEERING_ROOT 로 지정하라"; exit 1; }
+[ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라"; exit 1; }
 
 bash "$INIT" "$PWD" --full
 ```

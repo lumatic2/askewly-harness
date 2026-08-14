@@ -9,15 +9,15 @@
 
 ## engine-scripts
 
-- 커밋: `2d77a0727d56` (2026-08-14 기준) · 파일: 10개
+- 커밋: `d49faa90eea2` (2026-08-14 기준) · 파일: 10개
 
 ## engine-templates
 
-- 커밋: `2d77a0727d56` (2026-08-14 기준) · 파일: 2개
+- 커밋: `d49faa90eea2` (2026-08-14 기준) · 파일: 2개
 
 | 파일 | sha256(치환 후) |
 |---|---|
-| `harness-bootstrap/SKILL.md` | `a5cff27e4eac0d7f` |
+| `harness-bootstrap/SKILL.md` | `014f99e9176bf017` |
 | `harness-bootstrap/scripts/init-ai-readiness.sh` | `aef7be2a1cd198c7` |
 | `harness-bootstrap/scripts/templates/learning/ANALYSIS_TEMPLATE.md` | `4a69f59d479921ff` |
 | `harness-bootstrap/scripts/templates/learning/EXPERIMENT_TEMPLATE.md` | `7937cbc8357088b3` |
