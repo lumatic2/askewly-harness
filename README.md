@@ -9,7 +9,7 @@
 
 # askewly-harness
 
-### A personal operating system for running Claude Code and Codex together — as installable skills.
+### A personal operating system for running Claude Code and Codex together, as installable skills.
 
 <h2>"Done" is a claim until something re-runs it.</h2>
 
@@ -75,7 +75,7 @@ Six skills are installed: `harness-plan`, `harness-run`, `harness-done`, `harnes
 /session-end              # close the session: handoff file + journal append
 ```
 
-`harness-bootstrap` installs nothing but empty structure — the working rules live in the three skill bodies. Start any non-trivial work with `/harness-plan`; it ends with a single approval, and `/harness-run` executes the whole approved plan without stopping to re-confirm.
+`harness-bootstrap` installs nothing but empty structure; the working rules live in the three skill bodies. Start any non-trivial work with `/harness-plan`; it ends with a single approval, and `/harness-run` executes the whole approved plan without stopping to re-confirm.
 
 <a id="what-this-defines"></a>
 
@@ -371,7 +371,7 @@ askewly-harness/
     └── session-log/             # journal append only (parallel-session safe)
 ```
 
-`skills/` is a generated snapshot. `sync.py` takes the files from the private source repositories at a pinned commit (refusing dirty sources), applies the decoupling rules that strip personal wiring — machine names, private paths, personal notification relays — and then runs a leak check that must come back empty before anything is written. `skills/MANIFEST.md` records the source commit and a sha256 for every shipped file. Re-taking the snapshot requires the private repositories, so `sync.py` only runs on the author's machine; what you install is the checked snapshot.
+`skills/` is a generated snapshot. `sync.py` takes the files from the private source repositories at a pinned commit (refusing dirty sources), applies the decoupling rules that strip personal wiring (machine names, private paths, personal notification relays), and then runs a leak check that must come back empty before anything is written. `skills/MANIFEST.md` records the source commit and a sha256 for every shipped file. Re-taking the snapshot requires the private repositories, so `sync.py` only runs on the author's machine; what you install is the checked snapshot.
 
 Reading `skills/harness-run/scripts/` answers most of what the prose above only asserts: what an approval receipt actually is, what the gate rejects, and what the tests hold it to.
 
