@@ -53,17 +53,27 @@ description: >-
 
 ---
 
-## 탐색
+## 탐색 — 계획 착수 진입 조건
 
-**체크아웃 최신성 (첫 도구 호출 — 다기기 레포 필수)**: `python "$HARNESS_SCRIPTS/check_checkout_freshness.py" --root . --ttl 300`. **FAIL 이면 동기화 후 탐색** — 낡은 체크아웃은 기각된 설계를 되살린다. WARN 은 진행 가능하나 최신 보장 아님. "캐시" 출력이면 기각·회귀 단정 전 `--ttl 0` 재확인. **배포본-소스 어긋남을 "배포 회귀"로 단정하기 전에도 이 검사 먼저** — 소스 쪽 설계 변경일 수 있다.
+계획(milestone 선택·논의·분해)에 들어가기 전에 차례로 확인한다. 이 구간의 쓰기는 리서치 산출물 저장뿐이다.
 
-공통 필수 읽기: `ROADMAP.md` + `CLAUDE.md`. 산출물 타입별 추가 읽기:
+**1. 체크아웃 최신성 (첫 도구 호출 — 다기기 레포 필수)**: `python "$HARNESS_SCRIPTS/check_checkout_freshness.py" --root . --ttl 300`. **FAIL 이면 동기화 후 탐색** — 낡은 체크아웃은 기각된 설계를 되살린다. WARN 은 진행 가능하나 최신 보장 아님. "캐시" 출력이면 기각·회귀 단정 전 `--ttl 0` 재확인. **배포본-소스 어긋남을 "배포 회귀"로 단정하기 전에도 이 검사 먼저** — 소스 쪽 설계 변경일 수 있다.
+
+**2. 필수 읽기**: `ROADMAP.md` + `CLAUDE.md`. 산출물 타입별 추가 읽기:
 
 | 산출물 | 추가 읽기 |
 |------|---------|
 | changeset | 관련 `changesets/*/README.md` + 영향받는 `SKILL.md`/script/test/deploy 문서 |
 | reference 분석/experiment | `docs/00-INDEX.md` + 관련 `references/*/ANALYSIS.md` |
 | product 기능/화면 | `docs/PRD.md` + `docs/ARCHITECTURE.md` + (web) 루트 `DESIGN.md` 또는 token SSOT / (mobile) `docs/UI_GUIDE.md` + `docs/adr/` |
+
+**3. 축적 데이터 회수 (새 기획 지점 진입 시)** — 에이전트는 아는 만큼만 계획에 담으므로, `research/` 선조회(「계획 작성」 리서치 항목이 정본)와 함께 askewly data 통합 회수를 1회 돌려 과거 결정 규칙·도구·실측 기록을 계획 재료로 가져온다:
+
+```bash
+[ -f ~/projects/the-notes-repo/bin/data.py ] && python ~/projects/the-notes-repo/bin/data.py recall "<이번 작업 주제>" --src agent --limit 3 || true
+```
+
+5축(일반지식·도구·나·세션기록·디자인) 라벨 병합 결과에서 이번 계획과 맞닿는 항목을 결정 로그·리스크 설계에 반영한다. 경로가 없는 환경이면 가드가 조용히 생략한다(설치 불요 — 선택 배선).
 
 **공통 계층 — 2계층 (C4)**: `CLAUDE.md` 「북극성」 절(방향+규칙) → 작업 단위 계획서 `plans/<date>-<milestone-id>-<slug>.md`. horizon 층은 폐지. 새 에이전트는 이 둘과 `ROADMAP.md` 를 읽고 이어간다. **새 방향·신규 제품 기획은 계획서 생략 불가** — 「계획 작성」으로 설계 먼저.
 
@@ -130,6 +140,7 @@ description: >-
 - 「북극성」 절 없음/비어 있음 → **북극성 세우기 최우선** — 다른 단계보다 먼저, 본문은 한국어.
 - active 0 + 사용자가 새 방향 원함 → Milestone 설계(리프 판정으로 milestone-grade 확인).
 - 새 기획 지점 진입 시 **재료 수집(리서치)이 기본** — 에이전트는 아는 만큼만 계획에 담으므로 조사가 먼저다. 생략은 "조사 불요 — <이유>" 명시 시만. 산출물 `research/<YYYY-MM-DD>-<소비처>-<slug>.md`.
+  - **리서치 규율 정본 = research-playbook-template** (`~/projects/the-orchestration-repo/docs/agent-os/templates/research-playbook-template.md`) — 있으면 복사 적용해 scope·질문·E-level(증거 등급 E1~E5)·source-map(URL·접근일·재검증)·envelope 로 규율한다. 경로가 없는 환경이면 자유 양식 + 전 인용에 출처 URL·접근일.
   - **착수 전 `research/` 선조회 의무 (2026-08-04 M12)** — 리서치 여부·생략 판단과 무관하게 새 기획 지점 진입 시 `research/` 를 Glob 으로 훑어 이번 주제를 덮는 기존 문서가 있는지 먼저 본다. 있으면 재리서치 대신 **인용 + 증분 갱신**(record 원본은 동결 — 갱신분은 새 문서로, 기존 문서 백링크). 왜: 조회 규약 없는 저장은 쓰기 전용이 된다(실측 같은 대상 3회 재조사).
 
 **북극성 소유권 (2026-07-19 사용자 확정):** 문구는 **사용자 소유** — 에이전트는 후보 제안만, **명시 승인 후에만 기록**. 변경은 방향 자체가 바뀔 때만(Milestone 완료로 갱신 금지). 기계로 보호하지 않는다(ADR 0008).
