@@ -7,7 +7,9 @@
 set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)/skills"
-SKILLS=(harness harness-bootstrap session-end session-log)
+SKILLS=(harness-plan harness-run harness-done harness-bootstrap session-end session-log)
+# 구판(단일 /harness 스킬) 잔재 — 남아 있으면 신판과 라우팅이 섞인다
+LEGACY=(harness)
 
 WITH_CODEX=0
 [[ "${1:-}" == "--codex" ]] && WITH_CODEX=1
@@ -15,18 +17,22 @@ WITH_CODEX=0
 install_into() {
   local dest="$1"
   mkdir -p "$dest"
+  for s in "${LEGACY[@]}"; do
+    if [[ -d "$dest/$s" ]]; then
+      rm -rf "$dest/$s"
+      echo "[removed] $dest/$s (구판 잔재)"
+    fi
+  done
   for s in "${SKILLS[@]}"; do
     rm -rf "$dest/$s"
     cp -r "$SRC/$s" "$dest/$s"
     echo "[ok] $dest/$s"
   done
+  chmod +x "$dest/harness-bootstrap/scripts/init-ai-readiness.sh" 2>/dev/null || true
 }
 
 install_into "$HOME/.claude/skills"
 [[ $WITH_CODEX -eq 1 ]] && install_into "$HOME/.codex/skills"
 
-# 엔진 스크립트 실행 권한
-chmod +x "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh" 2>/dev/null || true
-
 echo ""
-echo "설치 완료. Claude Code 세션을 새로 열면 /harness, /harness-bootstrap 이 잡힌다."
+echo "설치 완료. 새 세션에서 /harness-bootstrap → /harness-plan → /harness-run → /harness-done 이 잡힌다."
