@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `851a7251f272` (2026-08-22 기준) · 파일: 29개
+- 커밋: `807cf28e897f` (2026-08-22 기준) · 파일: 29개
 
 ## engine-scripts
 
@@ -31,7 +31,7 @@
 | `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `cd04f1196c9bdb77` |
 | `harness-bootstrap/templates/REPORT_TEMPLATE.md` | `37d8ed7cf1996422` |
 | `harness-done/SKILL.md` | `e85a315e5770b5cd` |
-| `harness-plan/SKILL.md` | `9a5b3a6b8abd9001` |
+| `harness-plan/SKILL.md` | `47617fdca8f8f87b` |
 | `harness-plan/references/elicit.md` | `6fa8a81538678dec` |
 | `harness-run/SKILL.md` | `6adf60e71ad2c864` |
 | `harness-run/scripts/approve_harness_plan.py` | `f0acc27b7ae29fa7` |
