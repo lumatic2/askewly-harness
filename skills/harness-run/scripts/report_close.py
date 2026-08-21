@@ -83,12 +83,44 @@ def section_errors(sections: dict[str, str]) -> list[str]:
     return errors
 
 
+# 불릿·강조 표기를 벗긴다. `- 수확:` `**수확**:` `- **수확**:` 는 같은 줄이다 —
+# 게이트가 서식을 감시하면 선언을 해 놓고도 거절당한다(2026-08-20 M6 실측 재현).
+_LINE_MARKERS = "-*_ \t"
+
+
+def strip_markers(line: str) -> str:
+    return line.strip().lstrip(_LINE_MARKERS).strip()
+
+
+# 값 쪽은 **닫는 강조 + 콜론 하나**만 벗긴다. 마커 집합으로 lstrip 하면 값 자신의 머리글자를
+# 먹는다 — `재현: --pre-approval 로 재실행` 이 `pre-approval 로 재실행` 이 되어 동결 원장에
+# 틀린 재현 커맨드가 들어간다(2026-08-20 M6 코드 리뷰 실측).
+# 콜론을 **요구**하는 것이 두 번째 몫이다: 그러지 않으면 `- 재현 불가한 …` 같은 산문 줄이
+# `재현:` 필드로 읽혀 진짜 줄을 가리고, `수확:` 예외가 OI3 게이트의 우회로가 된다.
+_VALUE_RE = re.compile(r"^[*_\s]*:\s*(.*)$")
+
+
 def extract_line(body: str, prefix: str) -> str:
     for line in body.splitlines():
-        text = line.strip().lstrip("-*").strip()
-        if text.startswith(prefix):
-            return text[len(prefix):].lstrip(":").strip()
+        text = strip_markers(line)
+        if not text.startswith(prefix):
+            continue
+        match = _VALUE_RE.match(text[len(prefix):])
+        if match is None:
+            continue  # 콜론이 없으면 그 필드 줄이 아니다
+        return match.group(1).strip()
     return ""
+
+
+def is_unfilled(value: str) -> str:
+    """템플릿 placeholder 만 남은 값이면 빈 문자열. 채워졌으면 값 그대로.
+
+    구 게이트는 줄이 **존재하기만** 하면 통과시켜서, 템플릿의 `{…}` 를 그대로 둔 보고서가
+    조용히 닫혔다(2026-08-20 M6 코드 리뷰 실측: `- 수확: {이 milestone 에서 …}` rc 0).
+    판정을 안 한 것이 판정으로 기록되는 것 — M6 이 없애려던 실패 모드 그 자체다.
+    `section_errors` 가 이미 같은 정규화를 쓴다.
+    """
+    return value if re.sub(r"\{[^}]*\}", "", value).strip() else ""
 
 
 def first_sentence(body: str) -> str:
@@ -140,6 +172,17 @@ SIDE_EFFECT_CLAIMS = (
 # `검증:` 줄에 실행 근거(커맨드·통과 수치·게이트 이름)가 하나도 없으면, 그건 검증이 아니라
 # 주장이므로 `구현됨·미검증:` 선언을 요구한다.
 UNVERIFIED_DECLARATION = "구현됨·미검증:"
+
+# ── kg 수확 후보를 검사 가능한 대상으로 (2026-08-20 M6 step-1) ────────────────
+# 구 계약에서 kg 인입은 `harness-done/SKILL.md` 의 번호 밖 불릿에 "non-blocking" 으로만
+# 있었다. 그래서 빠뜨려도 **아무도 모른 채 보고서가 정상으로 닫혔다**(M5 실측, n=1).
+# 규율을 늘리는 게 아니라 누락을 관측 가능하게 만든다 — `없음` 은 그대로 통과시킨다.
+HARVEST_PREFIX = "수확"
+HARVEST_HELP = (
+    "§3 증거에 `수확:` 줄이 필요하다 — 이 milestone 에서 kg(지식 그래프)로 올릴 후보를 적는다.\n"
+    "  형식: `- 수확: <노드 후보 이름> — <출처 한 줄(재현 명령·커밋·URL)>` (여러 건이면 ` / ` 로 나열, 최대 2건)\n"
+    "  후보가 없으면 `- 수확: 없음` 또는 `- 수확: 없음 — <이유>` 로 적는다. 후보 0건이 정상 기본값이다."
+)
 _RUN_EVIDENCE_RE = re.compile(
     r"`[^`]+`|\bpytest\b|\bPASS\b|\bFAIL\b|passed|exit\s*(?:code)?\s*\d|doctor|smoke|\d+\s*(?:건|개|passed)",
     re.I,
@@ -184,6 +227,8 @@ def unevaluable_error(evidence_body: str, surface_smoke: str) -> str:
         stripped = line.strip()
         if not stripped or stripped.startswith("|--"):
             continue
+        if strip_markers(stripped).startswith(HARVEST_PREFIX + ":"):
+            continue  # `수확:` 은 검사 결과 서술이 아니라 분류 판정이다 (M6 D1/B2)
         if any(signal in stripped for signal in UNEVALUABLE_SIGNALS):
             hits.append(stripped[:90])
     if not hits:
@@ -260,12 +305,14 @@ def main(argv: list[str] | None = None) -> int:
         return fail("빈 보고서 거부 — " + "; ".join(errors))
 
     evidence_body = sections["증거"]
-    surface_smoke = extract_line(evidence_body, "실표면")
-    repro = extract_line(evidence_body, "재현")
+    surface_smoke = is_unfilled(extract_line(evidence_body, "실표면"))
+    repro = is_unfilled(extract_line(evidence_body, "재현"))
     if not surface_smoke:
         return fail("§3 증거에 `실표면:` 줄이 필요하다 — 실표면 스모크 결과 1줄 또는 'none — <이유>' (IMP-013)")
     if not repro:
         return fail("§3 증거에 `재현:` 줄이 필요하다 — 독립 재실행 커맨드/방법 1줄")
+    if not is_unfilled(extract_line(evidence_body, HARVEST_PREFIX)):
+        return fail(HARVEST_HELP)
 
     unevaluable = unevaluable_error(evidence_body, surface_smoke)
     if unevaluable:

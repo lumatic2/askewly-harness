@@ -5,20 +5,20 @@
 
 ## skills
 
-- 커밋: `5bc53f6255f1` (2026-08-15 기준) · 파일: 27개
+- 커밋: `fe911ff16019` (2026-08-22 기준) · 파일: 29개
 
 ## engine-scripts
 
-- 커밋: `137c04a8c7fa` (2026-08-01 기준) · 파일: 10개
+- 커밋: `1d50d2e32c68` (2026-08-22 기준) · 파일: 10개
 
 ## engine-templates
 
-- 커밋: `db6af9cfec62` (2026-08-14 기준) · 파일: 2개
+- 커밋: `d8e214fd7b11` (2026-08-22 기준) · 파일: 2개
 
 | 파일 | sha256(치환 후) |
 |---|---|
 | `harness-bootstrap/SKILL.md` | `014f99e9176bf017` |
-| `harness-bootstrap/scripts/init-ai-readiness.sh` | `aef7be2a1cd198c7` |
+| `harness-bootstrap/scripts/init-ai-readiness.sh` | `e0f4f882af784675` |
 | `harness-bootstrap/scripts/templates/learning/ANALYSIS_TEMPLATE.md` | `4a69f59d479921ff` |
 | `harness-bootstrap/scripts/templates/learning/EXPERIMENT_TEMPLATE.md` | `7937cbc8357088b3` |
 | `harness-bootstrap/scripts/templates/learning/ROADMAP.md` | `a3230431ba615d16` |
@@ -28,31 +28,33 @@
 | `harness-bootstrap/scripts/templates/tooling/ROADMAP.md` | `a15d937da8f5ba62` |
 | `harness-bootstrap/scripts/templates/workflow/DOMAIN.md` | `e11f95a27d50fed7` |
 | `harness-bootstrap/scripts/templates/workflow/PLAYBOOK_TEMPLATE.md` | `9a1ca41f5586bcdd` |
-| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `a09e8845a8a652f5` |
-| `harness-bootstrap/templates/REPORT_TEMPLATE.md` | `08d182c3ab10e47f` |
-| `harness-done/SKILL.md` | `25d8e3937b518e0d` |
-| `harness-plan/SKILL.md` | `08112bf690c8c99e` |
-| `harness-plan/references/elicit.md` | `82dcf687ddb8d6b1` |
+| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `a13a1fab0c9a4f96` |
+| `harness-bootstrap/templates/REPORT_TEMPLATE.md` | `37d8ed7cf1996422` |
+| `harness-done/SKILL.md` | `d1d9f11750dc0c66` |
+| `harness-plan/SKILL.md` | `39295b37d011c319` |
+| `harness-plan/references/elicit.md` | `6fa8a81538678dec` |
 | `harness-run/SKILL.md` | `6adf60e71ad2c864` |
 | `harness-run/scripts/approve_harness_plan.py` | `f0acc27b7ae29fa7` |
 | `harness-run/scripts/check_checkout_freshness.py` | `5d0be645d40e7a48` |
 | `harness-run/scripts/fix_report_durability.py` | `160125f78d8ec230` |
 | `harness-run/scripts/harness_work_state.py` | `136c2deba8dbe870` |
 | `harness-run/scripts/ledger_append.py` | `62c4b6f71b798e0a` |
-| `harness-run/scripts/report_close.py` | `174330cf08c07599` |
-| `harness-run/scripts/roadmap_sync.py` | `585d05706e53f632` |
+| `harness-run/scripts/report_close.py` | `c1e9332123f0cef5` |
+| `harness-run/scripts/roadmap_sync.py` | `ded69735b94452d6` |
 | `harness-run/scripts/test_approve_harness_plan.py` | `abb9c55c7bff0a95` |
 | `harness-run/scripts/test_check_checkout_freshness.py` | `cda6bbb95cd0e08a` |
 | `harness-run/scripts/test_harness_work_state.py` | `b55b01f1282633a4` |
 | `harness-run/scripts/test_ledger_append.py` | `93e38a7d2e82ad85` |
-| `harness-run/scripts/test_report_close.py` | `dc8405dd970419de` |
-| `harness-run/scripts/test_roadmap_sync.py` | `2db3b3db1a7cea6c` |
-| `harness-run/scripts/test_validate_plan_gate.py` | `a922f58b73279e83` |
-| `harness-run/scripts/validate_plan_gate.py` | `77269c01c8622a9e` |
-| `harness-run/templates/REPORT_TEMPLATE.md` | `f15b7b2c0b9d7021` |
-| `session-end/SKILL.md` | `3a773ad290259cf9` |
+| `harness-run/scripts/test_report_close.py` | `23cfb941385aef52` |
+| `harness-run/scripts/test_roadmap_sync.py` | `fca7fa56c679d1aa` |
+| `harness-run/scripts/test_validate_plan_gate.py` | `7057cd56f24bdb2b` |
+| `harness-run/scripts/validate_plan_gate.py` | `1386e2c0f8543c65` |
+| `harness-run/templates/REPORT_TEMPLATE.md` | `8352ec59c4eed243` |
+| `session-end/SKILL.md` | `c7cdb1b7d9462c05` |
 | `session-end/bin/handoff_commit.sh` | `1913f511a0054b7d` |
+| `session-end/bin/roadmap_hygiene.py` | `2f6194325169320f` |
 | `session-end/bin/session-log.py` | `439d43884693c8d7` |
 | `session-end/tests/test_handoff_commit.py` | `bf714574e8a80738` |
+| `session-end/tests/test_roadmap_hygiene.py` | `5c6099946c8ec848` |
 | `session-log/SKILL.md` | `53b26efb1128b411` |
 | `session-log/bin/session-log.py` | `439d43884693c8d7` |

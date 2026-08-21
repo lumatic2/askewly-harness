@@ -11,13 +11,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import report_close  # noqa: E402
 
+CHR_NL = chr(10)
 
-def make_report(path: Path, *, empty_evidence: bool = False, no_smoke: bool = False) -> None:
+
+def make_report(path: Path, *, empty_evidence: bool = False, no_smoke: bool = False,
+                harvest: str | None = "없음") -> None:
     evidence = "" if empty_evidence else (
         "- changesets/20260721-hq3-report-template · changesets/20260721-hq3-ledger-derivation\n"
         "- pytest scripts -q PASS\n"
         + ("" if no_smoke else "- 실표면: 배포된 report_close 를 실보고서로 구동 — 3-event 파생 관측\n")
         + "- 재현: python report_close.py <report> --task-id T1 --root .\n"
+        + ("" if harvest is None else f"- 수확: {harvest}\n")
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -138,6 +142,7 @@ SHORT_REPORT = """# 완료 — CF6 의식 다이어트
 - 검증: pytest -q PASS
 - 실표면: report_close 를 새 짧은 형식으로 구동해 3-event 파생 관측
 - 재현: python report_close.py <report> --task-id CF6 --root .
+- 수확: 없음
 """
 
 
@@ -260,3 +265,98 @@ def test_real_reports_still_pass_unverified_gate():
         assert report_close.unverified_error(body) == "", report.name
         checked += 1
     assert checked >= 3
+
+
+# ── M6 step-1: kg 수확 후보를 검사 가능한 대상으로 (2026-08-20) ───────────────
+# 누락은 규율 문제가 아니라 **관측 가능성** 문제였다 — 빠뜨려도 보고서가 정상으로 닫혔다.
+
+def test_missing_harvest_line_refused(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, harvest=None)
+    make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)])
+    assert rc == 1
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_harvest_help_states_full_format() -> None:
+    """거부 메시지 하나로 형식을 다 알 수 있어야 한다 — 레포별 템플릿 사본은 안 따라온다(D2)."""
+    help_text = report_close.HARVEST_HELP
+    assert "수확: 없음" in help_text
+    assert "출처" in help_text
+    assert "형식" in help_text
+
+
+def test_bare_harvest_none_passes(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, harvest="없음")
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) == 0
+
+
+def test_harvest_none_with_reason_is_not_unevaluable(tmp_path: Path) -> None:
+    """`없음 — n=1 이라 일반화 확인 불가` 는 분류 판정이지 못 돌린 검사가 아니다(B2)."""
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, harvest="없음 — n=1 이라 일반화 확인 불가")
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) == 0
+
+
+def test_harvest_notation_variants_parse_identically() -> None:
+    for notation in ("수확: 없음", "- 수확: 없음", "**수확**: 없음", "- **수확**: 없음"):
+        body = "- 검증: pytest -q PASS@" + notation + "@"
+        assert report_close.extract_line(body.replace("@", CHR_NL), "수확") == "없음", notation
+
+
+def test_existing_lines_survive_notation_variants() -> None:
+    """기존 4줄도 같은 표기 4종에서 무회귀 — 이번 완화의 회귀 표면은 신규 줄보다 넓다."""
+    for prefix, value in (("실표면", "ok (exit 0)"), ("재현", "pytest -q"),
+                          ("검증", "pytest -q PASS"), ("정리", "없음")):
+        for pattern in ("{p}: {v}", "- {p}: {v}", "**{p}**: {v}", "- **{p}**: {v}"):
+            body = pattern.format(p=prefix, v=value) + CHR_NL
+            assert report_close.extract_line(body, prefix) == value, (prefix, pattern)
+
+
+def test_harvest_line_excluded_from_unevaluable_scan() -> None:
+    body = "- pytest 226 passed" + CHR_NL + "- 수확: 없음 — 재현 불가한 일회성 관측이라 일반화 못 함" + CHR_NL
+    assert report_close.unevaluable_error(body, "ok (exit 0)") == ""
+    # 다른 줄의 같은 신호는 여전히 잡힌다
+    body2 = body + "- 소급 차단은 측정 불가" + CHR_NL
+    assert "평가하지 못한 검사" in report_close.unevaluable_error(body2, "ok (exit 0)")
+
+
+# ── M6 코드 리뷰 수리 (2026-08-20) ────────────────────────────────────────────
+# 표기 완화가 값의 머리글자까지 먹었고, 줄 존재만 보던 검사가 템플릿 placeholder 를
+# 통과시켰다. 셋 다 "판정을 안 한 것이 판정으로 기록되는" 같은 실패 모드다.
+
+def test_value_keeps_its_own_leading_dashes() -> None:
+    """`재현: --pre-approval 로 재실행` 이 원장에 그대로 들어가야 한다."""
+    for line, expect in (
+        ("- 재현: --pre-approval 로 재실행", "--pre-approval 로 재실행"),
+        ("- 정리: _tmp 삭제", "_tmp 삭제"),
+        ("- 실표면: -- 없음", "-- 없음"),
+        ("- **재현**: --json 으로 재실행", "--json 으로 재실행"),
+    ):
+        prefix = line.split(":")[0].strip().lstrip("-* ").replace("*", "")
+        assert report_close.extract_line(line + CHR_NL, prefix) == expect, line
+
+
+def test_colonless_prose_does_not_shadow_the_field() -> None:
+    """`- 재현 불가한 …` 은 산문이지 `재현:` 필드가 아니다."""
+    body = "- 재현 불가한 일회성 관측이 있었다" + CHR_NL + "- 재현: pytest -q" + CHR_NL
+    assert report_close.extract_line(body, "재현") == "pytest -q"
+
+
+def test_template_placeholder_is_not_a_filled_line(tmp_path: Path) -> None:
+    """템플릿의 `{…}` 를 그대로 둔 보고서는 판정을 안 한 것이다 — 닫히면 안 된다."""
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, harvest="{이 milestone 에서 kg 로 올릴 후보 — 없으면 없음}")
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) == 1
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_harvest_exemption_requires_the_colon() -> None:
+    """`수확:` 예외가 OI3 게이트의 우회로가 되면 안 된다."""
+    body = "- 수확물 정리: 측정 불가" + CHR_NL
+    assert "평가하지 못한 검사" in report_close.unevaluable_error(body, "ok (exit 0)")

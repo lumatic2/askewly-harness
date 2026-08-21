@@ -23,6 +23,10 @@ codex: true
 
 **ROADMAP·cascade 는 읽기만 한다.** 생성·편집, `Status: [x]`·`status="completed"` 변경, compact, BACKLOG archive는 전부 하네스 흐름(`/harness-done`) 소유다. 반영이 필요해 보이면 고치지 말고 `HANDOFF.md` 주의점에 한 줄로 남긴다 (예: "M2 DoD 충족된 듯 — 다음 /harness-done 에서 확인").
 
+**BACKLOG 아카이브 = ROADMAP 에서 마커째 제거** (M3 2026-08-19 확정). `docs/BACKLOG.md` 로 아카이브된 milestone 은 ROADMAP 에 completed 마커를 남기지 않는다 — `/harness-done` 의 `roadmap_sync.py compact` 가 블록을 삭제하고 BACKLOG 에 4줄 요약을 append 하기 때문이다. 그래서 **ROADMAP 에 남아 있는 completed 마커는 "아직 아카이브되지 않은 것"** 이고, 그것이 진행 섹션(Active·Pending)에 앉아 있으면 위생 문제다(아래 1-c ①). compact 는 150줄 상한을 넘긴 만큼만 오래된 것부터 걷어내므로, 같은 ROADMAP 에 마커 없는 milestone 과 completed 마커가 공존하는 것은 불일치가 아니라 정상이다. 집행(제거·이동)은 `/harness-done` 소유이고 session-end 는 읽고 알리기만 한다.
+
+**두 처분은 다른 명령이다** (M5 2026-08-20). *섹션 이동* = `roadmap_sync.py relocate`(마커를 남긴 채 자리만 옮긴다) · *BACKLOG 아카이브* = `roadmap_sync.py compact`(마커째 제거 + 4줄 요약 append). 전에는 이동 명령이 아예 없어서 위생 안내가 "손으로 하라"는 뜻이었고, 그래서 아무도 안 했다(플릿 실측 33 레포). 지금은 `complete()` 가 닫는 순간 자동으로 옮기므로 **새로 닫는 milestone 은 소급이 필요 없다** — `relocate` 는 이미 닫혀 있는 것들을 위한 진입점이다. 배치 판정 어휘(무엇이 진행 섹션인가)의 정본은 `roadmap_sync.py` 이고 `roadmap_hygiene.py` 가 그것을 import 한다. 사본을 두면 지적하는 것과 옮기는 것이 갈라진다.
+
 **워크트리 규칙 (HO1 2026-07-27)**: linked worktree 세션이면 `HANDOFF.md` 를 **쓰지 않는다** — 레포 수준 핸드오프는 main 체크아웃 소유다. 이 세션의 이어받기는 active plan doc 의 진행 로그(append-only 절)에 남기고 브랜치를 push 한다(계획서가 브랜치에 실려 다른 기기에서도 이어받는다). 레포 수준으로 꼭 남길 말이 있으면 헬퍼 `--to-main` 으로 대필한다(아래 1-b — main 이 dirty 면 헬퍼가 보류한다).
 
 ## 1. read-only preflight → HANDOFF.md 갱신
@@ -68,6 +72,21 @@ bash ~/.claude/skills/session-end/bin/handoff_commit.sh
 
 한 줄로 보고한다 (예: `ROADMAP: read-only 확인 | HANDOFF.md: 이어서 할 일 5건, 커밋+push 완료`). ROADMAP 이 없으면 만들지 말고 `ROADMAP: 없음(read-only)`.
 
+### 1-c. ROADMAP 위생 점검 (비파괴 — M3 2026-08-19)
+
+```bash
+python3 ~/.claude/skills/session-end/bin/roadmap_hygiene.py
+```
+
+(Codex 배포본이면 `~/.codex/skills/...`.) 읽기 전용이고 **항상 exit 0** 이다 — 이 점검이 세션 마감을 막는 일은 없다. 보는 것 4가지: ① 종결 마커가 진행 섹션(Active·Pending·Next·진행·대기·후보)에 남아 있음 ② 진행 중 milestone 0 ③ 마커 status ↔ 체크박스 불일치 ④ 비정본 status 어휘. 판정 어휘는 총괄 뷰 스크립트(`portfolio_status.py`)를 그대로 불러 쓰므로 총괄과 같은 눈으로 본다.
+
+- **깨끗하면 `ROADMAP 위생: PASS (active N)` 한 줄이다.** 그 한 줄은 4단계 완료 메시지에 흡수하고 따로 보고하지 않는다 — 통과 시 조용해야 사람이 이 스킬을 피하지 않는다.
+- **발견이 있으면 출력을 그대로 사용자에게 보여준다.** 요약하지 말 것(경로·ID 가 곧 처분 대상이다).
+- **고치는 것은 사용자 지시가 있을 때만.** ROADMAP read-only 계약은 그대로다 — 게이트는 목록과 제안만 낸다. 사용자가 그 자리에서 지시하면 그때 고치고, 지시가 없으면 `HANDOFF.md` 주의점에 한 줄로 넘긴다.
+- **왜 여기 있나**: `/harness-done` 은 milestone 하나를 닫는 데까지만 책임지고 닫은 뒤 ROADMAP 전체 모양은 아무도 안 본다. 그래서 마지막 milestone 을 닫은 레포가 총괄 뷰에서 조용히 사라진다(2026-08-15 askewly-command 실측). 세션 단위로 반드시 지나가는 관문이 여기뿐이라 게이트를 여기 둔다.
+- `roadmap_sync.py gap-check` 와 겹치지 않는다 — 그쪽은 하네스 마감이 부르는 gap 보고서(다음 milestone 후보 초안)이고, 이쪽은 세션 마감이 부르는 **마커 결함 점검**이다.
+- **진행 중 milestone 이 없는 것은 지적하지 않는다** (2026-08-20 사용자 확정). 다음이 있으면 그걸 하고 없으면 멈추는 것이며, 승격·PARK·kind 면제 중 무엇으로 보낼지는 **사용자 소유 판단**이다. 방치 여부는 주간 PORTFOLIO 리뷰의 판정 대기 큐가 이미 본다 — 매 세션 마감에 같은 처분을 요구하면 사람이 이 관문을 피하게 되고, 그러면 게이트가 있으나 없으나다(계약 ⓐ). 이 게이트가 내는 것은 **상태**가 아니라 **결함**뿐이다: 섹션 오배치 · 체크박스 불일치 · 비정본/누락 status 어휘.
+
 ## 2. 저널 기록 (append)
 
 본문을 stdin 으로 헬퍼에 넘긴다. 헬퍼가 날짜·기기 레이블·파일명·헤더·append 를 처리한다. **이어할 일은 여기 쓰지 않는다**(핸드오프는 1단계 소관).
@@ -104,4 +123,4 @@ BODY
 
 1. **저널 저널 블록** — 헬퍼 stdout 의 `── 기록한 세션 … ──` 부터 `✓ … 기록 완료 (append)` 까지 그대로. 재타이핑하면 기록물과 어긋난다.
 2. **이어서 할 일 echo** — 1단계에서 `HANDOFF.md` 에 쓴 리스트 재출력(실체는 그 파일에만 있고 여기선 확인용 표시일 뿐) + `handoff_commit.sh` 의 `[handoff]` 결과 줄.
-3. **완료 메시지** — `저널 기록 완료 (append) | HANDOFF.md 핸드오프 갱신·커밋·push | ROADMAP read-only 확인`
+3. **완료 메시지** — `저널 기록 완료 (append) | HANDOFF.md 핸드오프 갱신·커밋·push | ROADMAP read-only 확인 · 위생 <PASS(active N) | 발견 N건 | 생략>`. 위생 발견이 있으면 이 줄로 갈음하지 말고 1-c 출력 전문을 함께 보여준다.

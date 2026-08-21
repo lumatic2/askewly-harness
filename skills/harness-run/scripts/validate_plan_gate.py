@@ -22,11 +22,25 @@ UNAPPROVED = re.compile(r"awaiting\s+run\s+approval|proposed|draft|승인\s*대�
 DECISION_HEADING = re.compile(r"^##\s+(?:결정 로그|Decision Log)\b.*$", re.M | re.I)
 DECISION_STATUS = re.compile(r"^\s*-\s*status:\s*(resolved|none-required)\s*$", re.M | re.I)
 UNRESOLVED = re.compile(r"^\s*-\s*(?:status:\s*unresolved|unresolved:|pending-decision:|미해결:|결정 필요:)", re.M | re.I)
-PLACEHOLDER = re.compile(r"\b(?:TBD|TODO|FIXME|PLACEHOLDER|미정|추후\s*결정)\b", re.I)
+# M7 D1·D4 (2026-08-20): 전역 스캔 어휘에서 bare `PLACEHOLDER` 를 뺐다 — 코퍼스 실측
+# (the-source-repo/evidence/2026-08-20-m7-plan-corpus-before.json)에서 히트 60 중
+# 54 가 UI 서술의 평범한 명사였고, 한국어 계획서가 미기입을 그 단어로 적는 관행은 0건.
+# leaf 필드 값 검사(면제 없는 자리)만 6종 전부를 본다 — 전역용/필드용 정규식 분리(D4).
+PLACEHOLDER = re.compile(r"\b(?:TBD|TODO|FIXME|미정|추후\s*결정)\b", re.I)
+FIELD_PLACEHOLDER = re.compile(r"\b(?:TBD|TODO|FIXME|PLACEHOLDER|미정|추후\s*결정)\b", re.I)
 # IMP-041 (superpowers writing-plans 이식): 템플릿 중괄호 잔재 — `{여기 채우기}` 류.
 # 코드 펜스 밖에서만 검사한다 (plan 내 코드/JSON 예시 오탐 방지).
 BRACE_PLACEHOLDER = re.compile(r"\{(?:\.{3}|[A-Za-z가-힣][A-Za-z가-힣 _/-]{0,30})\}")
 CODE_FENCE = re.compile(r"^```.*?^```", re.M | re.S)
+# M7 D2 (2026-08-20): 언급 면제 표면 2종. ① 인라인 코드 스팬(코드 펜스의 한 단계 미세한
+# 같은 개념 — 코퍼스의 중괄호 히트 12 전부가 이 형태였고 진짜 미기입은 0) ② append-only
+# 절(`## 진행 로그`·`## finding 큐` — 승인 봉인 밖의 사후 기록이라 미기입 표식을 찾을
+# 자리가 아니다). 면제 스팬은 펜스 제거 사본 위에서 계산한다 — validate() 초입 주석 참조.
+INLINE_CODE = re.compile(r"`[^`\n]+`")
+APPEND_ONLY_HEADING = re.compile(r"^##[ \t]+(?:진행 로그|finding 큐)\b.*$", re.M)
+# D7: 안내의 정본은 거부 메시지다 — 걸린 그 자리에서 계약을 알려준다(템플릿 사본 25개는
+# 안 따라온다는 것이 M6 의 교훈).
+MENTION_HINT = "(언급이면 백틱으로 감싼다. 단 leaf 필드 값은 백틱 안이라도 예외 없이 검사한다)"
 # 용어 사전 lint (2026-07-17): 위계 레벨 예약어(Horizon/Milestone/Step) 대신 세션이 발명한
 # DP1·DD-3 식 라벨 금지 (harness-plan 용어 사전). 좁은 패턴만 — 일반 약어 오탐 방지.
 FORBIDDEN_LEVEL_LABEL = re.compile(r"\b(?:DP|DD)[-–]?\d+\b")
@@ -383,10 +397,13 @@ def derive_waves(text: str) -> list[list[str]]:
     return waves
 
 
-# ── 배차 설계 (2026-08-14 M18 step-1) ────────────────────────────────────────
+# ── 배차 설계 (2026-08-14 M18 step-1 · 2026-08-22 M23 step-7 확장) ───────────
 # 선택(opt-in) 절 — 절이 없으면 무검사(기존 계획 무영향). 있으면 문법·실재·모순을 검사한다.
 # 행 문법: `- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <경로/커맨드>`
-# 근거 줄: `- 근거: <배차 이득 — 파일 격리|독립 시각|컨텍스트 격리|벽시계 단축 중 ≥1>`
+# 근거 줄: `- 근거: <배차 이득 — 파일 격리|독립 시각|컨텍스트 격리|벽시계 단축|단가 중 ≥1>`
+# 계획 모델 줄(M23): `- 계획 모델: <model>` — 워커 모델 상한(≤ 계획 모델)의 대조 기준.
+#   sonnet 이 계획하며 opus 워커를 부리는 역전 차단(2026-08-22 사용자). 발효일 이후
+#   생성된 plan 에서 worker 행이 있으면 필수 — 이전 plan 은 기록 동결(무오탐).
 # 배차 이득·워커/검증자 계약의 정본은 delegation.md — 여기는 문법과 그래프 모순만 본다.
 DISPATCH_HEADING_RE = re.compile(r"^##[ \t]+배차 설계.*$", re.M)
 DISPATCH_ROW_RE = re.compile(
@@ -395,7 +412,10 @@ DISPATCH_ROW_RE = re.compile(
 )
 DISPATCH_STEP_BULLET_RE = re.compile(r"^[ \t]*-[ \t]*step-\d+\b.*$", re.M)
 DISPATCH_GAIN_RE = re.compile(r"^[ \t]*-[ \t]*근거[ \t]*:[ \t]*(.*)$", re.M)
-DISPATCH_GAINS = ("파일 격리", "독립 시각", "컨텍스트 격리", "벽시계 단축")
+DISPATCH_GAINS = ("파일 격리", "독립 시각", "컨텍스트 격리", "벽시계 단축", "단가")
+DISPATCH_PLAN_MODEL_RE = re.compile(r"^[ \t]*-[ \t]*계획 모델[ \t]*:[ \t]*(\S+)", re.M)
+DISPATCH_MODEL_RANK = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
+DISPATCH_MODEL_CAP_SINCE = "2026-08-22"
 
 
 def _leaf_dependency_edges(text: str) -> dict[str, list[str]]:
@@ -448,6 +468,41 @@ def validate_dispatch(text: str) -> list[str]:
             "배차 설계 절에 배차 이득 `- 근거:` 줄이 없다 — "
             f"{'|'.join(DISPATCH_GAINS)} 중 실제로 사는 것을 적는다"
         )
+    # 워커 모델 상한 ≤ 계획 모델 (M23 step-7, 2026-08-22 사용자 확정).
+    worker_models = {
+        sid: (m.group("model") or "").strip()
+        for sid, m in rows.items()
+        if m.group("mode").startswith("worker")
+    }
+    plan_model_m = DISPATCH_PLAN_MODEL_RE.search(section)
+    created_m = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
+    created = created_m.group(1) if created_m else ""
+    if worker_models and plan_model_m is None:
+        if created >= DISPATCH_MODEL_CAP_SINCE:
+            errors.append(
+                "배차 설계 절에 `- 계획 모델:` 줄이 없다 — worker 행이 있으면 "
+                "워커 모델 상한(≤ 계획 모델) 대조 기준으로 필수다"
+            )
+    elif plan_model_m is not None:
+        plan_model = plan_model_m.group(1).strip().lower()
+        if plan_model not in DISPATCH_MODEL_RANK:
+            errors.append(
+                f"계획 모델 서열 미상: {plan_model} — "
+                f"{'|'.join(DISPATCH_MODEL_RANK)} 중 하나로 적는다"
+            )
+        else:
+            for sid, wm in worker_models.items():
+                wml = wm.lower()
+                if wml and wml not in DISPATCH_MODEL_RANK:
+                    errors.append(
+                        f"배차 행 {sid}: worker 모델 서열 미상 {wm} — "
+                        f"{'|'.join(DISPATCH_MODEL_RANK)} 중 하나로 적는다"
+                    )
+                elif wml and DISPATCH_MODEL_RANK[wml] > DISPATCH_MODEL_RANK[plan_model]:
+                    errors.append(
+                        f"워커 모델 상한 위반: {sid} worker({wm}) > 계획 모델 {plan_model} — "
+                        "계획을 짠 모델보다 높은 워커는 역전이다(2026-08-22)"
+                    )
     # 순차 의존 leaf 의 병렬(worker) 선언 차단 — worker 로 지정된 두 leaf 사이에
     # 의존 경로가 있으면 Dependencies 파생 동시 집합과 모순이다.
     workers = [sid for sid, m in rows.items() if m.group("mode").startswith("worker") and sid in leaf_ids]
@@ -517,8 +572,31 @@ def validate_measurement_provenance(text: str) -> list[str]:
     return errors
 
 
-def validate(text: str) -> list[str]:
+def validate(text: str, pre_approval: bool = False) -> list[str]:
+    """계획 게이트 검사. `pre_approval=True` 는 **Status 값 판정 하나만** 면제한다.
+
+    승인 전 계획서는 정의상 draft 라 게이트가 항상 빨갛고, 그래서 "Status 하나만 남고
+    통과했다"는 판정에 사람이 매번 끼었다(M6 D3). 면제 경계 셋:
+      1. `Status:` 줄 **부재**는 이 플래그로도 FAIL 이다 (부재 검사와 값 검사는 별개).
+      2. 모듈 전역을 재바인딩하지 않는다 — 파라미터로만 흐른다(테스트 순서 오염 방지).
+      3. `approve_harness_plan.run_validator()` 에는 흘리지 않는다 — 승인 등록은 승인
+         어휘를 실제로 요구한다.
+    """
     errors: list[str] = []
+    # M7 (2026-08-20): 미기입 표식 두 스캔은 이 펜스 제거 사본 **하나** 위에서만 돈다 —
+    # 히트·줄 번호·면제 스팬 계산 전부. 원문과 사본은 줄 수는 같고(개행 유지 치환)
+    # 문자 오프셋이 다르므로 두 표면을 섞으면 위치가 어긋난다.
+    fenceless = CODE_FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    # M7 D2: 면제 스팬도 같은 사본 위에서 계산한다 (원문 오프셋과 섞으면 어긋난다)
+    exempt_spans: list[tuple[int, int]] = [m.span() for m in INLINE_CODE.finditer(fenceless)]
+    for m in APPEND_ONLY_HEADING.finditer(fenceless):
+        tail = fenceless[m.end():]
+        h2 = re.search(r"^##\s", tail, re.M)
+        exempt_spans.append((m.start(), m.end() + (h2.start() if h2 else len(tail))))
+
+    def _mention_exempt(start: int, end: int) -> bool:
+        return any(s <= start and end <= e for s, e in exempt_spans)
+
     errors.extend(validate_scaffold(text))
     errors.extend(validate_graph(text))
     errors.extend(validate_risk(text)[0])
@@ -531,12 +609,17 @@ def validate(text: str) -> list[str]:
         errors.append(
             "plan has no `Status:` line — 줄 맨 앞에서 시작해야 한다 (`- Status:` 불릿·굵게는 인식 안 됨)"
         )
-    elif UNAPPROVED.search(status_value) or not APPROVED.search(status_value):
+    elif not pre_approval and (UNAPPROVED.search(status_value) or not APPROVED.search(status_value)):
         errors.append(f"plan Status must explicitly contain approved or completed (현재 값: {status_value})")
 
     leaves = re.findall(r"^- \[(?: |x|X)\]\s+(.+)$", text, re.M)
     if len(leaves) < 2:
         errors.append("multi-step plan must contain at least two top-level checkbox leaves")
+    # M7 리뷰 수리 (2026-08-20): 엄격 검사가 소유한 필드 값 줄은 전역 스캔이 다시 잡지
+    # 않는다 — 한 표식에 에러 2개가 나면 힌트가 상충한다(전역은 "백틱으로 감싸라",
+    # 엄격은 "백틱도 소용없다" — 전자를 따라도 실패한다). 한 실수는 한 줄로 알린다
+    # (parse_dependency_value 와 같은 규율). 줄 번호는 원문/사본이 같아 그대로 대조 가능.
+    strict_field_lines: set[int] = set()
     for leaf in leaves:
         escaped = re.escape(leaf)
         block = re.search(rf"^- \[(?: |x|X)\]\s+{escaped}\s*$([\s\S]*?)(?=^- \[(?: |x|X)\]|^## |\Z)", text, re.M)
@@ -549,22 +632,47 @@ def validate(text: str) -> list[str]:
                 errors.append(f"step lacks required field {field}: {leaf}")
             elif not match.group(1).strip():
                 errors.append(f"step field {field} is empty: {leaf}")
+            else:
+                # M7 D3 (2026-08-20): leaf 6필드 값은 면제 없는 자리다 — 백틱·펜스 무관하게
+                # 필드용 어휘 6종 + 중괄호 표식을 본다. 언급 면제(D2)가 여기까지 새면
+                # 백틱으로 감싼 진짜 미기입 필드를 가린다. `Risk` 와 DoD 줄은 표면 밖.
+                value = match.group(1)
+                strict_field_lines.add(
+                    text.count("\n", 0, block.start(1) + match.start()) + 1
+                )
+                hit = FIELD_PLACEHOLDER.search(value) or BRACE_PLACEHOLDER.search(value)
+                if hit:
+                    errors.append(
+                        f"step field {field} contains a blank marker ({hit.group(0)}): {leaf} "
+                        "(필드 값은 백틱 안이라도 면제 없이 검사한다. 예시는 필드 값이 아니라 산문에 적는다)"
+                    )
 
-    for match in PLACEHOLDER.finditer(text):
-        line = text.count("\n", 0, match.start()) + 1
-        errors.append(f"plan contains a placeholder marker at line {line}: {match.group(0)}")
+    for match in PLACEHOLDER.finditer(fenceless):
+        if _mention_exempt(match.start(), match.end()):
+            continue
+        line = fenceless.count("\n", 0, match.start()) + 1
+        if line in strict_field_lines:
+            continue
+        errors.append(f"plan contains a placeholder marker at line {line}: {match.group(0)} {MENTION_HINT}")
 
     # IMP-041: 코드 펜스를 지운 사본에서 중괄호 템플릿 잔재 검사 (줄 번호 보존 위해 개행 유지 치환)
-    fenceless = CODE_FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
     for match in BRACE_PLACEHOLDER.finditer(fenceless):
+        if _mention_exempt(match.start(), match.end()):
+            continue
         line = fenceless.count("\n", 0, match.start()) + 1
-        errors.append(f"plan contains a template brace placeholder at line {line}: {match.group(0)}")
+        if line in strict_field_lines:
+            continue
+        errors.append(f"plan contains a template brace placeholder at line {line}: {match.group(0)} {MENTION_HINT}")
 
-    for match in FORBIDDEN_LEVEL_LABEL.finditer(text):
-        line = text.count("\n", 0, match.start()) + 1
+    # M8 F4 (2026-08-21): 발명 라벨 스캔도 미기입 스캔 2종과 같은 언급 면제 위에서 돈다 —
+    # 백틱 인용·진행 로그 절의 사후 서술이 언급만으로 FAIL 하던 결함(M7 리뷰 CONFIRMED).
+    for match in FORBIDDEN_LEVEL_LABEL.finditer(fenceless):
+        if _mention_exempt(match.start(), match.end()):
+            continue
+        line = fenceless.count("\n", 0, match.start()) + 1
         errors.append(
             f"plan uses an invented hierarchy label at line {line}: {match.group(0)} "
-            "(용어 사전 — 레벨은 북극성/Milestone/Step, ID 는 M<순번>/step-N)"
+            "(용어 사전 — 레벨은 북극성/Milestone/Step, ID 는 M<순번>/step-N. 언급이면 백틱으로 감싼다)"
         )
 
     errors.extend(validate_measurement_provenance(text))
@@ -600,17 +708,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("plan", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--pre-approval",
+        action="store_true",
+        help="승인 전 계획서 점검 — Status 값 판정만 면제한다(줄 부재·다른 검사는 그대로 FAIL)",
+    )
     args = parser.parse_args()
     text = args.plan.read_text(encoding="utf-8", errors="replace")
-    errors = validate(text)
+    errors = validate(text, pre_approval=args.pre_approval)
     risk_tally = validate_risk(text)[1]
     result = {"status": "pass" if not errors else "fail", "plan": str(args.plan), "errors": errors}
+    if args.pre_approval:
+        result["mode"] = "pre-approval"
     if risk_tally:
         result["risk"] = risk_tally
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print(f"plan gate: {result['status'].upper()} ({args.plan})")
+        mode = " [pre-approval — Status 값 판정 면제]" if args.pre_approval else ""
+        print(f"plan gate: {result['status'].upper()}{mode} ({args.plan})")
         if risk_tally:
             summary = " · ".join(f"{k} {v}" for k, v in sorted(risk_tally.items()))
             note = "  ← 미분류는 위험 쪽으로 취급한다" if risk_tally.get("미분류") else ""

@@ -137,6 +137,250 @@ def find_blocks(lines: list[str]) -> list[MarkerBlock]:
     return blocks
 
 
+# ── 섹션 배치 (M5 2026-08-20) ────────────────────────────────────────────────
+#
+# `complete()` 는 블록을 제자리에서만 고쳐서 닫은 milestone 이 진행 섹션에 영구히
+# 남았고, 밖으로 빼는 유일한 경로인 `compact()` 는 줄수 게이트에 막혀 있었다. 종결
+# 마커를 가진 레포 대부분이 그 게이트 아래라 배치가 영원히 안 고쳐졌다. 줄수 예산
+# (compact)과 섹션 배치(여기)를 갈라 놓는다 — 둘은 다른 처분이다.
+#
+# **이 절이 섹션 배치 어휘의 정본이다.** session-end 의 roadmap_hygiene.py 가 여기서
+# import 해 간다(사본 금지 — 위생 게이트가 지적하는 것과 이 도구가 고치는 것이 어긋나면
+# 안내문이 거짓이 된다).
+
+# 진행 계열 섹션 제목. 이 안에 드는 섹션 아래의 종결 블록만 옮긴다 — `## 마일스톤`
+# 처럼 완료·미완이 섞여 사는 미분류 섹션은 건드리지 않는다(레포마다 관습이 다르다).
+IN_PROGRESS_HEADING_RE = re.compile(r"Active|Pending|Next|진행|대기|후보", re.I)
+
+# 종결 status. 정본은 `the-orchestration-repo/scripts/portfolio_status.py` 의
+# TERMINAL_STATUSES 이고 여기 리터럴은 그 사본이다 — 이 스크립트는 플릿 전체가
+# 공유하므로 외부 레포 절대경로에 하드 의존하지 않는다. 두 집합이 어긋나면
+# `promoted/session-end/tests/test_roadmap_hygiene.py` 의 동치 테스트가 잡는다.
+TERMINAL_STATUSES = frozenset({"completed", "skipped", "dropped", "archived"})
+
+# 종결 블록을 담는 그릇으로 인정하는 섹션 제목 — **정확 일치만**.
+# 넓은 정규식을 쓰면 안 된다: 플릿 33 레포의 `## Archive Pointer` 는 docs/BACKLOG.md 를
+# 가리키는 포인터 문단이지 그릇이 아니고, `## Completed Milestone — M60` 처럼 회차가
+# 박힌 record 섹션에 새 블록을 떨구는 것도 오배치다.
+TERMINAL_SECTION_TITLES = ("Completed", "Completed Milestones", "완료", "완료 이력")
+CANONICAL_TERMINAL_SECTION = "Completed"
+
+
+def section_spans(lines: list[str]) -> list[tuple[str, int, int]]:
+    """`## ` 섹션 목록 — (제목, 헤딩 줄 index, 끝 index(exclusive))."""
+    heads = [i for i, l in enumerate(lines) if l.startswith("## ")]
+    spans = []
+    for n, i in enumerate(heads):
+        end = heads[n + 1] if n + 1 < len(heads) else len(lines)
+        spans.append((lines[i][3:].strip(), i, end))
+    return spans
+
+
+def _section_title_at(spans: list[tuple[str, int, int]], idx: int) -> str:
+    for title, start, end in spans:
+        if start <= idx < end:
+            return title
+    return ""
+
+
+def _trim_trailing_blanks(lines: list[str], start: int, end: int) -> int:
+    """[start, end) 끝쪽의 빈 줄을 제외한 삽입 지점."""
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def _ensure_terminal_section(lines: list[str]) -> tuple[list[str], int]:
+    """대상 섹션을 확보하고 (새 lines, 그 섹션 끝의 삽입 지점) 을 돌려준다.
+
+    기존 화이트리스트 섹션이 있으면 재사용하고, 없으면 **마지막 진행 섹션 바로 뒤**에
+    `## Completed` 를 만든다. 진행 계열이 여럿인 레포(`Active` + `Next Candidates` 가
+    표준형)에서 첫 진행 섹션 뒤에 끼우면 진행 계열이 둘로 쪼개진다.
+    """
+    spans = section_spans(lines)
+    for title, start, end in spans:
+        if title in TERMINAL_SECTION_TITLES:
+            return lines, _trim_trailing_blanks(lines, start, end), title
+
+    last_ip = None
+    for title, start, end in spans:
+        if IN_PROGRESS_HEADING_RE.search(title):
+            last_ip = (start, end)
+    if last_ip is None:  # 호출자가 진행 섹션 아래 블록만 넘기므로 도달하지 않는다
+        return lines, len(lines), CANONICAL_TERMINAL_SECTION
+
+    at = _trim_trailing_blanks(lines, *last_ip)
+    heading = ["", f"## {CANONICAL_TERMINAL_SECTION}", ""]
+    return lines[:at] + heading + lines[at:], at + len(heading), CANONICAL_TERMINAL_SECTION
+
+
+def _is_setext_underline(lines: list[str], idx: int) -> bool:
+    """`---` 가 thematic break 가 아니라 **setext 제목 밑줄**인가.
+
+    바로 위가 빈 줄이 아닌 텍스트면 그 `---` 는 위 줄을 h2 로 만드는 밑줄이다.
+    접으면 제목이 사라진다(2026-08-20 코드 리뷰 적발).
+    """
+    return idx > 0 and bool(lines[idx - 1].strip())
+
+
+def _collapse_rules_at(lines: list[str], seams: list[int]) -> list[str]:
+    """**이동으로 생긴 이음매에서만** 중복 `---` 를 하나로 접는다.
+
+    전 파일을 훑으면 이 이동과 무관한 섹션의 구분자까지 조용히 다시 쓴다 — `complete()`
+    가 이 경로를 항상 타므로 플릿의 모든 마감에 적용된다(2026-08-20 코드 리뷰 적발).
+    `_selfcheck` 는 `---` 와 빈 줄을 구조적으로 안 보므로 그 변경을 잡아 주지도 못한다.
+    """
+    drop: set[int] = set()
+    for seam in seams:
+        after = seam
+        while after < len(lines) and not lines[after].strip():
+            after += 1
+        if after >= len(lines) or lines[after].strip() != "---":
+            continue
+        if _is_setext_underline(lines, after):
+            continue
+        before = seam - 1
+        while before >= 0 and not lines[before].strip():
+            before -= 1
+        if before >= 0 and lines[before].strip() == "---" and not _is_setext_underline(lines, before):
+            drop.add(after)
+    return [l for i, l in enumerate(lines) if i not in drop]
+
+
+def _selfcheck(before: list[str], after: list[str]) -> str | None:
+    """쓰기 직전 자기검사. 문제를 찾으면 사람이 읽을 한 줄, 없으면 None.
+
+    이 스크립트는 출고되면 플릿 전 레포의 상태판을 만진다. 잘못 쓴 파일을 되돌리는
+    것보다 안 쓰는 쪽이 싸다.
+    """
+    import collections
+
+    before_m = sorted(l for l in before if MILESTONE_RE.search(l))
+    after_m = sorted(l for l in after if MILESTONE_RE.search(l))
+    if before_m != after_m:
+        return f"마커 집합이 바뀌었다 (before {len(before_m)} → after {len(after_m)})"
+
+    def bag(ls: list[str]) -> collections.Counter:
+        # 빈 줄과 `---` 는 접기 대상이라 제외한다.
+        return collections.Counter(l for l in ls if l.strip() and l.strip() != "---")
+
+    lost = bag(before) - bag(after)
+    if lost:
+        sample = next(iter(lost))
+        return f"줄이 사라졌다 ({sum(lost.values())}줄, 예: {sample.strip()[:60]!r})"
+    gained = bag(after) - bag(before)
+    allowed = {f"## {CANONICAL_TERMINAL_SECTION}"}
+    stray = {l for l in gained if l not in allowed}
+    if stray:
+        sample = next(iter(stray))
+        return f"없던 줄이 생겼다 (예: {sample.strip()[:60]!r})"
+    return None
+
+
+def relocate_terminal(
+    lines: list[str], only: set[str] | None = None
+) -> tuple[list[str], list[str]]:
+    """진행 섹션 아래의 종결 블록을 대상 섹션 **끝**으로 옮긴다.
+
+    섹션 끝에 파일 등장 순서를 유지해 append 하는 것이 계약이다 — 그래야 두 번째
+    실행이 no-op 이 되고, `compact()` 가 파일 앞에서부터 걷어내는 기존 의미(오래된
+    것부터 아카이브)가 유지된다.
+
+    마커를 지우지 않고 BACKLOG 에 쓰지 않는다. 그건 `compact()` 가 하는 **다른
+    처분**이고, "ROADMAP 에 남은 종결 마커 = 아직 아카이브되지 않은 것" 이라는 규약이
+    거기 걸려 있다.
+
+    반환: (새 lines, 옮긴 milestone id 목록, 대상 섹션 제목, 건너뛴 [id, 사유] 목록)
+    """
+    spans = section_spans(lines)
+    candidates = [
+        b
+        for b in find_blocks(lines)
+        if b.attrs.get("status") in TERMINAL_STATUSES
+        and (only is None or b.milestone_id in only)
+        and IN_PROGRESS_HEADING_RE.search(_section_title_at(spans, b.start))
+    ]
+
+    # 하위 `###` 절을 달고 있는 블록은 **옮기지 않는다** (2026-08-20 코드 리뷰 적발).
+    # `_block_end` 는 다음 `###` 에서 멈추는데, 그 경계는 원래 `compact`(삭제)가 사이의
+    # 산문을 안 지우려고 만든 것이다. 삭제에는 맞지만 **이동에는 안 맞는다** — 마커와
+    # 첫 제목만 Completed 로 가고 하위 절은 진행 섹션에 남아 고아가 된다. 줄이 사라진
+    # 것은 아니라서 `_selfcheck` 도 못 잡고, 위생 게이트는 마커가 옮겨졌으니 PASS 를
+    # 준다. 즉 조용히 쪼개진다. 경계를 넓히면 이번엔 milestone 것이 아닌 산문까지
+    # 삼킬 수 있으므로(2026-06-20 데이터 소실과 같은 모양), 확실히 못 옮기는 것은
+    # 옮기지 않고 사유를 말한다.
+    movers, skipped = [], []
+    for block in candidates:
+        tail = lines[block.end] if block.end < len(lines) else ""
+        if tail.startswith("### "):
+            skipped.append((block.milestone_id, "하위 `###` 절이 딸려 있어 경계를 확정할 수 없다"))
+            continue
+        movers.append(block)
+
+    if not movers:
+        return list(lines), [], CANONICAL_TERMINAL_SECTION, skipped
+
+    chunks = []
+    for block in movers:
+        chunk = list(block.lines)
+        while chunk and not chunk[-1].strip():
+            chunk.pop()
+        chunks.append(chunk)
+
+    # 이음매를 **센티넬**로 표시해 둔다. 삽입(섹션 생성·payload)이 인덱스를 밀기
+    # 때문에 산술로 따라가면 조용히 어긋난다. 조립이 끝난 뒤 위치를 찾아 걷어낸다.
+    seam = "\x00SEAM\x00"
+    remaining: list[str] = []
+    cursor = 0
+    for block in movers:
+        remaining.extend(lines[cursor : block.start])
+        remaining.append(seam)
+        cursor = block.end
+    remaining.extend(lines[cursor:])
+
+    remaining, insert_at, section_title = _ensure_terminal_section(remaining)
+
+    # 블록 사이에 빈 줄을 넣는다. 안 넣으면 `- Status: [x]` 다음 줄이 곧바로 다음 마커라
+    # Completed 섹션에서 블록 경계가 보이지 않는다(2026-08-20 코드 리뷰 적발 — toolshelf 실측).
+    payload: list[str] = []
+    for chunk in chunks:
+        if payload:
+            payload.append("")
+        payload.extend(chunk)
+
+    merged = remaining[:insert_at] + payload + remaining[insert_at:]
+    # 센티넬을 걷어낸 뒤의 좌표로 옮겨 적는다 — 접기는 실제 본문 위에서 판정해야 한다.
+    seams: list[int] = []
+    out: list[str] = []
+    for line in merged:
+        if line == seam:
+            seams.append(len(out))
+            continue
+        out.append(line)
+    return _collapse_rules_at(out, seams), [b.milestone_id for b in movers], section_title, skipped
+
+
+def relocate(args: argparse.Namespace) -> int:
+    path = Path(args.roadmap)
+    lines = read_lines(path)
+    moved_lines, moved, section, skipped = relocate_terminal(lines)
+    for mid, why in skipped:
+        print(f"건너뜀: {mid} — {why}", file=sys.stderr)
+    if not moved:
+        print("배치 이동 0건 — 진행 섹션에 남은 종결 블록이 없다")
+        return 0
+    problem = _selfcheck(lines, moved_lines)
+    if problem:
+        print(f"거부: 자기검사 실패라 쓰지 않았다 — {problem}", file=sys.stderr)
+        return 1
+    if args.dry_run:
+        print(f"[dry-run] 이동 대상 {len(moved)}건: {', '.join(moved)} → ## {section}")
+        return 0
+    write_lines(path, moved_lines)
+    print(f"배치 이동 {len(moved)}건: {', '.join(moved)} → ## {section}")
+    return 0
+
+
 def find_goal(lines: list[str]) -> str:
     for idx, line in enumerate(lines):
         if GOAL_RE.search(line):
@@ -209,8 +453,28 @@ def complete(args: argparse.Namespace) -> int:
         new_block = replace_or_append(new_block, SUMMARY_RE, f"- Summary: {args.summary}")
 
     lines = lines[: block.start] + new_block + lines[block.end :]
+
+    # M5 2026-08-20: 마커를 닫는 순간이 옮길 자연스러운 시점이다. 별도 명령으로만 두면
+    # 아무도 안 불러서(그게 원래 결함이었다) 진행 섹션에 그대로 남는다. 방금 닫은 것
+    # 하나만 옮긴다 — 같은 파일의 다른 종결 블록 소급은 `relocate` 서브커맨드 몫이다.
+    before = lines
+    lines, moved, section, skipped = relocate_terminal(lines, only={args.milestone})
+    for mid, why in skipped:
+        print(f"  배치 이동 건너뜀: {mid} — {why}", file=sys.stderr)
+    if moved:
+        problem = _selfcheck(before, lines)
+        if problem:
+            print(
+                f"거부: 배치 이동 자기검사 실패라 쓰지 않았다 — {problem}\n"
+                f"  `- Status: [x]` 갱신도 함께 보류됐다. ROADMAP 모양을 확인하고 다시 돌린다.",
+                file=sys.stderr,
+            )
+            return 1
+
     write_lines(path, lines)
     print(f"completed {args.milestone}")
+    if moved:
+        print(f"  배치 이동: {', '.join(moved)} → ## {section}")
     return 0
 
 
@@ -296,14 +560,47 @@ def pointer_scan_files(roadmap: Path) -> list[Path]:
     return files
 
 
-def dangling_plan_pointers(roadmap: Path, lines: list[str]) -> list[str]:
-    """ROADMAP 이 가리키는 plan doc 이 실재하는지 검사한다 (2026-07-20).
+# M8 F3 (2026-08-21): 언급/사용 표면 분리. 사용 표면은 백틱이 아니라 **필드**로
+# 정의한다 — 정본 표기 자체가 백틱 포함이라(위 PLAN_POINTER_RE 주석의 `- Plan:` 예시)
+# 백틱은 이 코퍼스에서 판별자가 아니다(플릿 실측: 백틱 111 중 다수가 진짜 백링크).
+_POINTER_FENCE_RE = re.compile(r"^```.*?^```", re.M | re.S)
+_POINTER_APPEND_RE = re.compile(r"^##[ \t]+(?:진행 로그|finding 큐)\b.*$", re.M)
+_POINTER_FIELD_RE = re.compile(
+    r"^\s*(?:>\s*)?-?\s*\*{0,2}(?:Plan|Evidence|milestone plan)\*{0,2}\s*:", re.I
+)
+
+
+def _pointer_exempt_spans(text: str) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """→ (펜스 스팬, append-only 절 스팬). 둘을 가르는 이유: 펜스는 필드 리드인보다
+    우선하는 면제(펜스 안 `- Plan:` 예시는 인용)지만, append-only 절 안의 필드는
+    여전히 사용 표면이다(M8 리뷰 수리 — 순서를 뭉개면 펜스 예시가 오탐된다)."""
+    fence = [m.span() for m in _POINTER_FENCE_RE.finditer(text)]
+    append: list[tuple[int, int]] = []
+    for m in _POINTER_APPEND_RE.finditer(text):
+        tail = text[m.end():]
+        h2 = re.search(r"^##\s", tail, re.M)
+        append.append((m.start(), m.end() + (h2.start() if h2 else len(tail))))
+    return fence, append
+
+
+def _cross_repo_resolves(pointer: str, projects_root: Path | None = None) -> bool:
+    root = projects_root if projects_root is not None else Path.home() / "projects"
+    if (root / pointer).is_file():
+        return True
+    return pointer.startswith("projects/") and (root.parent / pointer).is_file()
+
+
+def dangling_plan_pointers(
+    roadmap: Path, lines: list[str], projects_root: Path | None = None
+) -> list[str]:
+    """살아있는 계획 문서의 plan doc 백링크가 실재하는지 검사한다 (2026-07-20 · M8 재정의).
 
     plan doc 의 존재 이유는 "새 에이전트가 읽고 몇 시간 이어받는다"인데, 재개
-    경로는 ROADMAP milestone 블록의 `- Plan:` 포인터를 따라간다. 2026-07-17 배치
-    이동(`docs/plans/` → `archive/plans/`)이 백링크를 안 고쳐 이 레포 포인터 18개
-    중 11개가 빈 주소였다 — 가장 최근 완료한 LA2·LA3 포함. 계획 산출물의 전달
-    경로 자체가 끊긴 것이라 completed 라고 면제하지 않는다(재개·감사 둘 다 깨진다).
+    경로는 `- Plan:`·`- Evidence:`·`> milestone plan:` 필드 값을 따라간다. 이
+    **사용 표면은 면제가 없다**(백틱 무관 — 정본 표기가 백틱 포함이다). 그 밖의
+    산문은 좁게 면제한다: 코드 펜스·append-only 절(`## 진행 로그`·`## finding 큐`)
+    안의 경로, 그리고 다른 레포로 실재 해석되는 cross-repo 인용(M8 D2). 로컬로도
+    cross-repo 로도 해석 안 되는 산문 경로는 그냥 끊긴 포인터라 그대로 잡는다.
     """
     root = roadmap.resolve().parent
     missing: list[str] = []
@@ -311,9 +608,23 @@ def dangling_plan_pointers(roadmap: Path, lines: list[str]) -> list[str]:
     for path in pointer_scan_files(roadmap):
         text = "\n".join(lines) if path == roadmap.resolve() else path.read_text(encoding="utf-8")
         label = path.relative_to(root).as_posix() if path != roadmap.resolve() else roadmap.name
-        for pointer in dict.fromkeys(PLAN_POINTER_RE.findall(text)):
+        fence_spans, append_spans = _pointer_exempt_spans(text)
+        for match in PLAN_POINTER_RE.finditer(text):
+            pointer = match.group(1)
             if (root / pointer).is_file() or pointer in seen:
                 continue
+            start, end = match.span(1)
+            if any(a <= start and end <= b for a, b in fence_spans):
+                continue  # 펜스 안 = 인용 (필드 리드인 예시 포함 — 펜스가 우선)
+            line_start = text.rfind("\n", 0, start) + 1
+            line_end = text.find("\n", start)
+            line = text[line_start: line_end if line_end != -1 else len(text)]
+            if _POINTER_FIELD_RE.match(line):
+                pass  # 사용 표면 — append-only 절 안에서도 필드가 우선
+            elif any(a <= start and end <= b for a, b in append_spans):
+                continue  # append-only 절의 산문 = 사후 기록
+            elif _cross_repo_resolves(pointer, projects_root):
+                continue  # 다른 레포로 실재 해석 = 언급
             seen.add(pointer)
             missing.append(f"{label}: {pointer}")
     return missing
@@ -332,7 +643,9 @@ def lint(args: argparse.Namespace) -> int:
     for pointer in dangling_plan_pointers(roadmap, lines):
         errors.append(
             f"dangling plan pointer: `{pointer}` — 파일이 없다. 아카이브로 옮겼으면 "
-            "`archive/plans/…` 로 백링크를 갱신한다 (재개 경로가 끊긴다)"
+            "`archive/plans/…` 로 백링크를 갱신한다 (재개 경로가 끊긴다. "
+            "필드 값과 산문의 로컬 경로는 실재해야 하고, 언급은 코드 펜스·"
+            "진행 로그/finding 큐 절·실재하는 다른 레포 경로로만 통과한다)"
         )
     if errors:
         print("roadmap lint: FAIL")
@@ -546,6 +859,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_complete.add_argument("--force", action="store_true",
                             help="active/completed 가 아닌 status(blocked·pending 등)도 완료로 덮는다")
 
+    p_relocate = sub.add_parser(
+        "relocate",
+        help="진행 섹션에 남은 종결 블록을 Completed 섹션으로 옮긴다 (마커·BACKLOG 는 안 건드린다)",
+    )
+    p_relocate.add_argument("--dry-run", action="store_true",
+                            help="옮길 대상만 출력하고 파일은 쓰지 않는다")
+
     p_gap = sub.add_parser("gap-check")
     p_gap.add_argument("--gap-out", default="")
 
@@ -564,6 +884,8 @@ def main(argv: list[str] | None = None) -> int:
         return lint(args)
     if args.cmd == "complete":
         return complete(args)
+    if args.cmd == "relocate":
+        return relocate(args)
     if args.cmd == "gap-check":
         return gap_check(args)
     if args.cmd == "compact":

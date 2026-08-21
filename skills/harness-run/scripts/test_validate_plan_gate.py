@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import subprocess
+import sys
+from pathlib import Path
+
 from validate_plan_gate import validate
 
 GOOD = """# Plan
@@ -300,3 +304,225 @@ assert any("근거" in e for e in _no_gain), _no_gain
 assert validate(DISPATCH_GOOD.replace("- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a", "- step-2 · inline · 격리 none · 검증 pytest a")) == []
 
 print("plan gate 배차 설계 7건 PASS")
+
+# ── M23 step-7 (2026-08-22): 단가 이득 + 계획 모델 상한 ───────────────────────
+# 구 문법 무오탐은 위 DISPATCH_GOOD(생성 2026-08-14 < 발효일) == [] 가 이미 증명.
+_M23 = DISPATCH_GOOD.replace("> 생성: 2026-08-14", "> 생성: 2026-08-22").replace(
+    "- 근거: 벽시계 단축 (독립 leaf 2, 파일 겹침 없음)",
+    "- 근거: 단가 (명세 고정 leaf, 부모는 검증만)\n- 계획 모델: fable",
+)
+assert validate(_M23) == [], validate(_M23)
+# 발효일 이후 + worker 행 + 계획 모델 줄 없음 → FAIL
+_no_cap = validate(DISPATCH_GOOD.replace("> 생성: 2026-08-14", "> 생성: 2026-08-22"))
+assert any("계획 모델" in e for e in _no_cap), _no_cap
+# 상한 위반: 계획 모델 sonnet < worker(opus) → FAIL
+_inv = validate(
+    _M23.replace("- 계획 모델: fable", "- 계획 모델: sonnet").replace(
+        "- step-2 · worker(sonnet)", "- step-2 · worker(opus)"
+    )
+)
+assert any("상한 위반" in e for e in _inv), _inv
+# 서열 미상 모델 → FAIL
+_unk = validate(_M23.replace("- step-2 · worker(sonnet)", "- step-2 · worker(gpt5)"))
+assert any("서열 미상" in e for e in _unk), _unk
+
+print("plan gate 배차 모델 상한 4건 PASS")
+
+
+# ── M6 step-2: --pre-approval 은 Status **값 판정** 하나만 면제한다 ────────────
+# 승인 전 계획서는 정의상 draft 라 게이트가 항상 빨갛고, "Status 하나만 남았다"는
+# 판정에 사람이 매번 꼈다(M6 D3). 면제 범위가 새면 게이트를 무력화하는 우회로가 된다.
+
+DRAFT = GOOD.replace("Status: approved 2026-07-11", "Status: draft (승인 대기)")
+
+# 1) 승인 전 계획서가 플래그로 통과한다
+assert validate(DRAFT, pre_approval=True) == [], validate(DRAFT, pre_approval=True)
+# 플래그 없이는 기존대로 Status 로 막힌다 (무회귀)
+assert any("Status" in e for e in validate(DRAFT)), validate(DRAFT)
+
+# 2) `Status:` 줄 **부재**는 플래그가 있어도 FAIL — 부재 검사와 값 검사는 별개다
+_no_status = DRAFT.replace("Status: draft (승인 대기)" + chr(10), "")
+assert any("no `Status:` line" in e for e in validate(_no_status, pre_approval=True)),     validate(_no_status, pre_approval=True)
+
+# 3) 필수 항목 결손은 플래그가 있어도 FAIL
+_no_verify = DRAFT.replace("  - Verify: test two" + chr(10), "")
+assert any("Verify" in e for e in validate(_no_verify, pre_approval=True))
+# 결정 로그 미소진도 그대로 막힌다
+_unresolved = DRAFT.replace("- decision: local only", "- unresolved: choose DB")
+assert any("unresolved" in e for e in validate(_unresolved, pre_approval=True))
+# leaf 2개 미만도 그대로 막힌다
+assert any("two top-level" in e for e in validate(
+    "Status: draft" + chr(10) + "## Scope Boundary" + chr(10), pre_approval=True))
+
+# 4) Risk 어휘 위반은 플래그가 있어도 FAIL (2026-07-24 이후 생성 계획서에만 걸리는 규칙)
+_risk_bad = DISPATCH_GOOD.replace("Status: approved 2026-07-24", "Status: draft").replace(
+    "  - Risk: 기계적 (순수 추가)", "  - Risk: 높음 (감으로 적었다)", 1)
+_risk_errors = validate(_risk_bad, pre_approval=True)
+assert any("Risk" in e for e in _risk_errors), _risk_errors
+
+# 5) 승인 완료된 계획서는 두 모드에서 똑같이 통과한다
+assert validate(GOOD) == validate(GOOD, pre_approval=True) == []
+
+# 6) 기본값은 면제 없음 — 파라미터를 안 주면 지금까지와 같다
+assert any("Status" in e for e in validate(DRAFT))
+
+# 7) approve_harness_plan 은 이 플래그를 전달하지 않는다 (승인 등록은 승인 어휘를 요구한다).
+#    나중에 누가 흘리는 것을 막는 회귀 케이스다.
+_approve_src = (Path(__file__).resolve().parent / "approve_harness_plan.py").read_text(encoding="utf-8")
+assert "--pre-approval" not in _approve_src and "pre_approval" not in _approve_src,     "approve_harness_plan 이 pre-approval 을 validator 에 흘리고 있다"
+
+# 8) CLI 표면 — 플래그가 실제로 붙어 있고 exit code 가 갈린다
+_gate = Path(__file__).resolve().parent / "validate_plan_gate.py"
+import tempfile
+with tempfile.TemporaryDirectory() as _d:
+    _plan = Path(_d) / "draft.md"
+    _plan.write_text(DRAFT, encoding="utf-8")
+    assert subprocess.run([sys.executable, str(_gate), str(_plan)]).returncode == 1
+    assert subprocess.run([sys.executable, str(_gate), str(_plan), "--pre-approval"]).returncode == 0
+
+print("plan gate --pre-approval 8건 PASS")
+
+# ── M7 step-2: 검사 어휘 정정 + 펜스 표면 통일 (2026-08-20 D1·D4) ─────────────
+# 코퍼스 실측(before 스냅샷): bare 'PLACEHOLDER' 히트 60 중 54 가 UI 서술의 평범한
+# 명사였다. 전역 스캔에서 빼고, 남은 5종은 산문에서 여전히 잡혀야 한다(단정형 probe).
+
+# 1) UI 서술 문장이 통과한다 — 구현 전 FAIL 하던 오탐의 재구성
+_ui = GOOD.replace("- decision: local only", "- decision: 빈 상태에는 placeholder 안내 문구를 보여준다")
+assert validate(_ui) == [], validate(_ui)
+
+# 2) 단정형 probe — 펜스 밖 산문에 남은 어휘 5종이 있으면 **반드시** FAIL.
+#    통과하면 어휘를 너무 깎은 것이다.
+for _tok in ("TBD", "TODO", "FIXME", "미정", "추후 결정"):
+    _hit = validate(GOOD.replace("- decision: local only", f"- decision: {_tok}"))
+    assert any("placeholder marker" in e for e in _hit), (_tok, _hit)
+
+# 3) 코드 펜스 안의 어휘는 통과한다 (어휘 스캔도 펜스 제거 사본을 본다 — 표면 통일)
+_fenced_tok = GOOD + "\n```text\nTODO: 이 줄은 예시다\nTBD\n```\n"
+assert validate(_fenced_tok) == [], validate(_fenced_tok)
+
+# 4) 줄 번호 회귀 — 펜스가 앞에 있어도 보고된 줄 번호가 원문 줄 번호와 일치한다
+#    (개행 유지 치환이라 사본과 원문의 줄 수는 같다 — 오프셋 혼용 회귀 방지)
+_numbered = GOOD + "\n```json\n{\"k\": 1}\n```\n- note: TBD\n"
+_expected_line = _numbered[:_numbered.index("- note: TBD")].count("\n") + 1
+_line_errs = validate(_numbered)
+assert any(f"line {_expected_line}:" in e and "placeholder marker" in e for e in _line_errs), (_expected_line, _line_errs)
+
+# 5) 필드 값용 정규식은 6종 전부를 유지한다 (D4 불변식 — step-4 가 소비)
+from validate_plan_gate import FIELD_PLACEHOLDER, PLACEHOLDER as _GLOBAL_PLACEHOLDER  # noqa: E402
+assert FIELD_PLACEHOLDER.search("PLACEHOLDER"), "필드용 정규식이 PLACEHOLDER 를 놓친다"
+assert not _GLOBAL_PLACEHOLDER.search("placeholder 안내"), "전역 정규식에 PLACEHOLDER 가 남아 있다"
+
+print("plan gate M7 어휘·펜스 표면 9건 PASS")
+
+# ── M7 step-3: 면제 표면 2종 — 인라인 코드 스팬 + append-only 절 (D2·D7) ──────
+# 언급(백틱 인용·사후 기록)은 통과시키고, 같은 문자열이 산문에 bare 로 있으면 그대로
+# 잡는다. 면제 스팬은 step-2 의 펜스 제거 사본 위에서 계산한다.
+
+# 1) 백틱으로 감싼 어휘·중괄호 표식이 통과한다
+_bt_tok = GOOD.replace("- decision: local only", "- decision: 게이트는 `TBD` 표식을 잡는다")
+assert validate(_bt_tok) == [], validate(_bt_tok)
+_bt_brace = GOOD.replace("- decision: local only", "- decision: 템플릿 잔재는 `{여기 채우기}` 형태다")
+assert validate(_bt_brace) == [], validate(_bt_brace)
+
+# 2) 단정형 probe — 같은 문자열이 백틱 **밖**이면 반드시 FAIL
+_bare_tok = GOOD.replace("- decision: local only", "- decision: 게이트는 TBD 표식을 잡는다")
+assert any("placeholder marker" in e for e in validate(_bare_tok)), validate(_bare_tok)
+_bare_brace = GOOD.replace("- decision: local only", "- decision: 템플릿 잔재는 {여기 채우기} 형태다")
+assert any("template brace" in e for e in validate(_bare_brace)), validate(_bare_brace)
+
+# 3) append-only 절(진행 로그·finding 큐)의 표식은 통과하고, 같은 줄이 본문 절이면 FAIL
+_log_ok = GOOD + "\n## 진행 로그 (append-only)\n- step-1 에서 TBD 로 남겼던 값을 채웠다. {스코프} 표기도 정리.\n"
+assert validate(_log_ok) == [], validate(_log_ok)
+_fq_ok = GOOD + "\n## finding 큐\n- F9. TODO 주석이 남는 문제는 다음 milestone 후보.\n"
+assert validate(_fq_ok) == [], validate(_fq_ok)
+_body_hit = GOOD + "\n## 회고\n- step-1 에서 TBD 로 남겼던 값을 채웠다. {스코프} 표기도 정리.\n"
+_body_errs = validate(_body_hit)
+assert any("placeholder marker" in e for e in _body_errs), _body_errs
+assert any("template brace" in e for e in _body_errs), _body_errs
+# append-only 절은 다음 h2 에서 끝난다 — 그 아래 절은 면제가 아니다
+_after_log = GOOD + "\n## 진행 로그\n- 기록.\n\n## 회고\n- TBD\n"
+assert any("placeholder marker" in e for e in validate(_after_log)), validate(_after_log)
+
+# 4) D7 — 거부 메시지가 그 자리에서 계약을 알려준다
+assert any("백틱으로 감싼다" in e and "leaf 필드 값" in e for e in validate(_bare_tok)), validate(_bare_tok)
+
+# 5) F1 재구성 fixture 2건 (M6 아카이브 계획서의 두 발생 형태) — 백틱으로 감싸면 통과
+#    ① 검사를 설명하려고 어휘를 본문에 적음 ② 작성 제약을 설명하려고 중괄호 표식을 예시로 적음
+_f1a = GOOD.replace("- decision: local only", "- decision: 미기입 검사는 `TODO` 같은 어휘를 계획서 전역에서 찾는다")
+_f1b = GOOD.replace("- decision: local only", "- decision: step-3 은 `{모듈 이름}` 같은 표식을 남기면 안 된다")
+assert validate(_f1a) == [], validate(_f1a)
+assert validate(_f1b) == [], validate(_f1b)
+
+# 6) 단정형 probe — 같은 문자열(백틱 없는 원형)을 leaf 필드 값으로 옮기면 반드시 FAIL
+#    (리뷰 수리 후 필드 값 줄은 엄격 검사가 단독 소유 — 에러는 blank marker 1개)
+_f1a_field = GOOD.replace("  - Artifact: runtime guard", "  - Artifact: 미기입 검사는 TODO 같은 어휘를 찾는다")
+assert any("blank marker" in e for e in validate(_f1a_field)), validate(_f1a_field)
+_f1b_field = GOOD.replace("  - Artifact: runtime guard", "  - Artifact: {모듈 이름} 구현")
+assert any("blank marker" in e for e in validate(_f1b_field)), validate(_f1b_field)
+
+print("plan gate M7 면제 표면 13건 PASS")
+
+# ── M7 step-4: leaf 6필드 값 엄격 검사 (D3·D4) ────────────────────────────────
+# 필드 값은 저자가 반드시 채우는 자리라 면제가 없다 — 백틱 안 표식도 잡고,
+# 에러가 leaf 와 필드명을 지목한다. `Risk` 와 DoD 줄은 표면 밖.
+
+# 1) 백틱으로 감싼 미채운 템플릿 표식을 leaf 필드 값에 넣으면 FAIL + leaf·필드 지목
+_strict_brace = GRAPH_GOOD.replace("  - Artifact: runtime guard", "  - Artifact: `{모듈 이름}` 구현")
+_sb_errs = validate(_strict_brace)
+assert any("blank marker" in e and "Artifact" in e and "step-2" in e for e in _sb_errs), _sb_errs
+# 단정형 probe ① — 면제가 필드 값까지 새면 M6 이 고친 구멍의 재생산이다
+_strict_tok = GRAPH_GOOD.replace("  - Verify: test two", "  - Verify: `TBD`")
+_st_errs = validate(_strict_tok)
+assert any("blank marker" in e and "Verify" in e and "step-2" in e for e in _st_errs), _st_errs
+# 필드용 어휘는 6종 전부다 — 전역에서 뺀 단어도 필드 값에서는 잡힌다 (D4 불변식)
+_strict_ph = GRAPH_GOOD.replace("  - Artifact: runtime guard", "  - Artifact: placeholder")
+assert any("blank marker" in e and "Artifact" in e for e in validate(_strict_ph)), validate(_strict_ph)
+
+# 2) 백틱 안 정상 값(커맨드 등)은 통과한다
+_strict_cmd = GRAPH_GOOD.replace("  - Verify: test two", "  - Verify: `python -m pytest -q scripts/`")
+assert validate(_strict_cmd) == [], validate(_strict_cmd)
+
+# 3) `Risk:` 는 엄격 표면 밖이다 — 근거 괄호의 백틱 표식 언급이 통과한다 (실증)
+_risk_mention = RISK_GOOD.replace(
+    "  - Risk: 위험 (통과하던 것이 막힌다)",
+    "  - Risk: 위험 (게이트가 `{모듈 이름}` 표식 검사를 바꾼다)",
+)
+assert validate(_risk_mention) == [], validate(_risk_mention)
+
+print("plan gate M7 필드 값 엄격 6건 PASS")
+
+# ── M7 리뷰 수리: 필드 값의 bare 표식은 에러 **1개**만 낸다 ───────────────────
+# 이중 발화는 힌트가 상충한다(전역: 백틱으로 감싸라 / 엄격: 백틱도 소용없다).
+# 한 실수는 한 줄로 알린다 — parse_dependency_value 와 같은 규율.
+_single = validate(GRAPH_GOOD.replace("  - Artifact: runtime guard", "  - Artifact: TBD 정리"))
+_marker_errs = [e for e in _single if "TBD" in e]
+assert len(_marker_errs) == 1, _marker_errs
+assert "blank marker" in _marker_errs[0], _marker_errs
+# 필드 밖 산문의 bare 표식은 여전히 전역 스캔이 잡는다 (스킵이 필드 줄로만 한정)
+_still_global = validate(GRAPH_GOOD.replace("- decision: local only", "- decision: TBD"))
+assert any("placeholder marker" in e for e in _still_global), _still_global
+
+print("plan gate M7 이중 에러 수리 3건 PASS")
+
+# ── M8 step-2: 발명 라벨 스캔도 언급 면제 위에서 돈다 (F4, 2026-08-21) ────────
+# M7 리뷰 CONFIRMED: 백틱 인용·진행 로그 절 서술이 언급만으로 FAIL 했다.
+
+# 1) 백틱 인용이 통과한다 (리뷰 재현 fixture ①)
+_lbl_bt = GOOD.replace("- decision: local only", "- decision: `DP1` 같은 라벨은 금지다")
+assert validate(_lbl_bt) == [], validate(_lbl_bt)
+# 2) 진행 로그 절의 사후 서술이 통과한다 (리뷰 재현 fixture ②)
+_lbl_log = GOOD + "\n## 진행 로그 (append-only)\n- DP2 라벨을 지웠다.\n"
+assert validate(_lbl_log) == [], validate(_lbl_log)
+# 3) 코드 펜스 안 라벨이 통과한다
+_lbl_fence = GOOD + "\n```text\nDD-3 예시\n```\n"
+assert validate(_lbl_fence) == [], validate(_lbl_fence)
+# 4) 단정형 probe — 산문 bare 라벨은 반드시 FAIL (기존 케이스와 별도로 본문 절 위치)
+_lbl_bare = GOOD + "\n## 회고\n- DP1 방식으로 정리했다.\n"
+assert any("invented hierarchy label" in e for e in validate(_lbl_bare)), validate(_lbl_bare)
+# 5) 여러 줄 코드 펜스 뒤 bare 라벨의 보고 줄 번호가 원문 줄 번호와 일치한다
+_lbl_numbered = GOOD + "\n```json\n{\n  \"k\": 1\n}\n```\n- note: DP7 라벨\n"
+_lbl_expected = _lbl_numbered[:_lbl_numbered.index("- note: DP7")].count("\n") + 1
+_lbl_errs = validate(_lbl_numbered)
+assert any(f"line {_lbl_expected}:" in e and "invented hierarchy" in e for e in _lbl_errs), (_lbl_expected, _lbl_errs)
+
+print("plan gate M8 라벨 언급 면제 5건 PASS")

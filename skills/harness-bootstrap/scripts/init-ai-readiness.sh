@@ -368,20 +368,18 @@ create_agents_md() {
 
 공통 원칙은 홈 스코프 AGENTS.md 에서 이미 로드됐다고 가정한다. 여기서는 중복하지 않는다.
 
-## Peer agent adapter
+## 독립 운영 (Codex 소유)
 
 이 프로젝트는 Claude 와 Codex 를 동등한 peer agent 로 운용한다. 어느 쪽도 영구 orchestrator 가 아니며, 현재 task 를 잡은 session owner 가 계획·수정·검증·커밋·handoff 를 소유한다.
 
-\`CLAUDE.md\` 는 파일명과 무관하게 프로젝트 공유 brief 이고, 이 파일은 Codex 가 그 공유 brief 를 자기 런타임에서 안전하게 실행하기 위한 adapter 이다. 세션 시작 시 반드시 \`./CLAUDE.md\`, \`./ROADMAP.md\`(있으면), \`./HANDOFF.md\`(있으면 — git-tracked 핸드오프), \`./CLAUDE.local.md\`(있으면 — 기기-로컬 사실)를 읽고 시작한다.
+**이 파일은 Codex 가 독립 소유한다** — \`CLAUDE.md\` 의 번역본·미러가 아니고, Codex 실사용 기준으로만 갱신하며 \`CLAUDE.md\` 와 내용을 맞출 의무가 없다(2026-08-22 미러링 폐지). 세션 시작 시 반드시 \`./CLAUDE.md\`(공유 프로젝트 컨텍스트), \`./ROADMAP.md\`(있으면), \`./HANDOFF.md\`(있으면 — git-tracked 핸드오프), \`./CLAUDE.local.md\`(있으면 — 기기-로컬 사실)를 읽고 시작한다.
 
-- \`CLAUDE.md\`: 프로젝트 공유 brief — 기술 스택, 구조, 개발 명령어, 보호 파일 / 금지 사항, 기타 이 프로젝트 고유의 작업 방식
-- \`AGENTS.md\`: Codex runtime adapter — Claude-only 표면을 Codex-safe 실행 방식으로 번역
+- \`CLAUDE.md\`: 공유 프로젝트 컨텍스트 — 기술 스택, 구조, 개발 명령어, 보호 파일 / 금지 사항. 그 안의 Claude 전용 표면(slash·hook·subagent·MCP·memory)은 실행 지시가 아니다 — 같은 목적을 Codex 실재 수단으로 수행하고, 불가하면 보고한다
 - \`ROADMAP.md\`: active milestone·다음 할 일. milestone 완료·compact 는 \`/harness-done\` 소유
 - \`docs/BACKLOG.md\`: 완료·보류·아카이브된 milestone 압축 이력. \`/harness-done\` 의 ROADMAP.md 150줄 budget 유지용
 - \`session-end\`: ROADMAP 을 수정하지 않고 read-only 로 확인한 뒤 \`HANDOFF.md\` handoff(git-tracked, 단독 커밋+push)에만 반영
 - **완료 계약**: 작업 단위 산출물 기본 = changeset — milestone 당 README 1개(step 은 절, 기록-합본) + 인덱스 행. **1 step = 1 commit** — 커밋까지가 완료
-
-\`CLAUDE.md\`의 내용 중 Claude 전용 도구 호출 규칙은 Codex 환경에 맞게 해석하되, 프로젝트 구조·규칙은 그대로 따른다.
+- 두 런타임이 공유하는 규칙은 공유 문서(\`docs/\`·ADR·changeset·스킬 소스)로 승격한다 — 이 파일과 \`CLAUDE.md\` 에 같은 규칙을 복제하지 않는다
 
 ## Context landmarks
 
@@ -404,7 +402,7 @@ create_agents_md() {
 
 role lane은 자동 subagent/team 실행을 뜻하지 않는다. 도구가 가능하고 위험도가 맞을 때만 위임하고, 기본은 같은 세션에서 lane별로 분리 검토한다.
 EOF
-  echo "[ok] AGENTS.md skeleton 생성 (Codex runtime adapter)"
+  echo "[ok] AGENTS.md skeleton 생성 (Codex 소유 — 독립 운영)"
 }
 
 create_roadmap_md() {
@@ -553,9 +551,9 @@ $(printf '%b' "$STRUCTURE_HINT")
 - \`session-end\` 는 ROADMAP 을 수정하지 않는다. read-only 로 확인하고 \`HANDOFF.md\` handoff(git-tracked)에만 반영한다.
 
 ## 컨텍스트 갱신 규칙
-- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일(그리고 이 레포 \`AGENTS.md\`)에 추가를 제안한다.
-- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 글로벌(\`~/.claude/CLAUDE.md\`/\`~/.codex/AGENTS.md\`)에 제안한다 — 헷갈리면 물어본다.
-- Claude 와 Codex 둘 다 지켜야 할 규칙이면 이 \`CLAUDE.md\` 와 \`AGENTS.md\` 양쪽에 추가한다(문구는 달라도 되나 내용은 일치).
+- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일에 추가를 제안한다(두 런타임 공통이면 공유 문서·스킬 소스 승격을 제안).
+- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 자기 런타임 글로벌(Claude→\`~/.claude/CLAUDE.md\`, Codex→\`~/.codex/AGENTS.md\`)에 제안한다 — 헷갈리면 물어본다.
+- 이 \`CLAUDE.md\` 는 Claude 소유, \`AGENTS.md\` 는 Codex 소유다(미러링 폐지, 2026-08-22). 둘 다 지켜야 할 규칙은 양쪽에 복제하지 말고 공유 문서(\`docs/\`·ADR·스킬 소스)로 승격하고 각 파일엔 포인터만 둔다.
 - 정기적으로(주 1회 또는 감이 안 잡힐 때) \`context-manager\` 를 "전체 점검"으로 돌려 배치 오류·drift 를 확인한다.
 
 ## ⚠ Judge 규약
@@ -581,9 +579,9 @@ EOF
       cat >> "$REPO/CLAUDE.md" <<'CTXEOF'
 
 ## 컨텍스트 갱신 규칙
-- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일(그리고 이 레포 `AGENTS.md`)에 추가를 제안한다.
-- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 글로벌(`~/.claude/CLAUDE.md`/`~/.codex/AGENTS.md`)에 제안한다 — 헷갈리면 물어본다.
-- Claude 와 Codex 둘 다 지켜야 할 규칙이면 이 `CLAUDE.md` 와 `AGENTS.md` 양쪽에 추가한다(문구는 달라도 되나 내용은 일치).
+- 사용자가 같은 교정을 2회 이상 반복하거나 "항상 ~해줘"·"다시는 ~하지 마" 식으로 말하면, 메모리에 넣지 말고 그 자리에서 이 파일에 추가를 제안한다(두 런타임 공통이면 공유 문서·스킬 소스 승격을 제안).
+- 이 레포에만 해당하는 사실은 여기에, 모든 레포에 해당하면 자기 런타임 글로벌(Claude→`~/.claude/CLAUDE.md`, Codex→`~/.codex/AGENTS.md`)에 제안한다 — 헷갈리면 물어본다.
+- 이 `CLAUDE.md` 는 Claude 소유, `AGENTS.md` 는 Codex 소유다(미러링 폐지, 2026-08-22). 둘 다 지켜야 할 규칙은 양쪽에 복제하지 말고 공유 문서(`docs/`·ADR·스킬 소스)로 승격하고 각 파일엔 포인터만 둔다.
 - 정기적으로(주 1회 또는 감이 안 잡힐 때) `context-manager` 를 "전체 점검"으로 돌려 배치 오류·drift 를 확인한다.
 CTXEOF
       echo "[ok] CLAUDE.md 기존 — ## 컨텍스트 갱신 규칙 append"
