@@ -209,7 +209,14 @@ def plan_ready_leaves(plan_path: Path, done_ids: set[str]) -> list[str]:
     if not waves:
         return []
     labels = {}
-    for match in gate.LEAF_ID_HEADING.finditer(text):
+    # leaf_headings 는 M24(2026-08-22) 신설 — 배포 skew 로 구 게이트가 잡히면 종전
+    # 정규식으로 폴백한다(훅은 배포 어긋남으로 죽지 않는다, _load_plan_gate 계약).
+    heading_iter = (
+        gate.leaf_headings(text)
+        if hasattr(gate, "leaf_headings")
+        else gate.LEAF_ID_HEADING.finditer(text)
+    )
+    for match in heading_iter:
         labels[match.group("id")] = f"{match.group('id')} — {match.group('slug')}".strip()
     for wave in waves:
         pending = [leaf for leaf in wave if leaf not in done_ids]

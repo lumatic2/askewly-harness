@@ -73,8 +73,29 @@ LEAF_FIELDS = {
 # scope (see TASK_MASTER_STYLE fixture in the test file): only edge validity on
 # top of the *existing* mandatory verify contract above.
 LEAF_ID_HEADING = re.compile(
-    r"^- \[(?: |x|X)\]\s+\*\*(?P<id>[\w.-]+)\s*(?:—|--|-)\s*(?P<slug>.+?)\*\*\s*$", re.M
+    r"^- \[(?: |x|X)\]\s+\*\*(?P<id>[\w.-]+)\s*(?:—|--|-)\s*(?P<slug>.+?)\*\*"
+    r"(?:\s*(?P<tail>\([^()\n]*\)))?\s*$",
+    re.M,
 )
+# 닫는 ** 뒤 괄호 꼬리말 1개('(2026-08-17 완료)' 류)는 M24(2026-08-22)부터 leaf 로
+# 인정한다. 소급하지 않는다 — 소급하면 지금까지 leaf 집합 밖이던 heading 이 그래프·
+# Risk 검증에 한꺼번에 편입돼 플릿 계획서 26건이 PASS→FAIL 로 뒤집힌다(2026-08-22
+# 코퍼스 1110건 실측, living plans/ 10건 포함). validate_risk 의 RISK_RULE_SINCE 와
+# 같은 생성일 게이팅 패턴(이 파일에서 4번째) — 기록은 동결이 원칙.
+LEAF_TAIL_SINCE = "2026-08-22"
+
+
+def leaf_headings(text: str) -> list["re.Match[str]"]:
+    """id 형식 leaf heading 목록 — LEAF_ID_HEADING 소비의 단일 관문.
+
+    꼬리말 있는 heading 은 생성일 >= LEAF_TAIL_SINCE 인 계획서에서만 leaf 다.
+    직접 LEAF_ID_HEADING.finditer 를 부르지 말 것(게이팅을 건너뛴다) —
+    harness_work_state.py 의 이어받기 파생도 이 함수를 쓴다."""
+    matches = list(LEAF_ID_HEADING.finditer(text))
+    created = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
+    if created is None or created.group(1) < LEAF_TAIL_SINCE:
+        matches = [m for m in matches if not m.group("tail")]
+    return matches
 
 
 # CS6 step-2 (2026-07-17): 범용화 — 코어 3(별칭 허용) + 자기선언 도메인 + 제외 자기점검.
@@ -195,7 +216,7 @@ def validate_graph(text: str) -> list[str]:
     independent root) — adopted from plan-forge (2026-07-20) on top of the existing
     per-leaf verify contract. Silently no-ops for plans that don't use the
     '- [ ] **id — slug**' heading form, so it never forces a migration."""
-    matches = list(LEAF_ID_HEADING.finditer(text))
+    matches = leaf_headings(text)
     if not matches:
         return []
 
@@ -301,7 +322,7 @@ def validate_risk(text: str) -> tuple[list[str], dict[str, int]]:
     created = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
     if created is None or created.group(1) < RISK_RULE_SINCE:
         return [], {}
-    matches = list(LEAF_ID_HEADING.finditer(text))
+    matches = leaf_headings(text)
     if not matches:
         return [], {}
     errors: list[str] = []
@@ -356,7 +377,7 @@ def derive_waves(text: str) -> list[list[str]]:
     `Files:` 에서 경로를 못 뽑은 leaf 도 겹칠 수 있는 것으로 본다 — 안전 측.
     그래프가 없거나 깨졌으면 빈 목록(= 소비자는 텍스트 순서로 폴백).
     """
-    matches = list(LEAF_ID_HEADING.finditer(text))
+    matches = leaf_headings(text)
     if not matches:
         return []
     bodies: dict[str, str] = {}
@@ -420,7 +441,7 @@ DISPATCH_MODEL_CAP_SINCE = "2026-08-22"
 
 def _leaf_dependency_edges(text: str) -> dict[str, list[str]]:
     """id 형식 leaf 의 (id → 의존 id 목록). validate_graph 와 같은 절단 규칙."""
-    matches = list(LEAF_ID_HEADING.finditer(text))
+    matches = leaf_headings(text)
     edges: dict[str, list[str]] = {}
     for i, m in enumerate(matches):
         start = m.end()
@@ -441,7 +462,7 @@ def validate_dispatch(text: str) -> list[str]:
     errors: list[str] = []
     tail = text[heading.end():]
     section = re.split(r"^##\s+", tail, maxsplit=1, flags=re.M)[0]
-    leaf_ids = {m.group("id") for m in LEAF_ID_HEADING.finditer(text)}
+    leaf_ids = {m.group("id") for m in leaf_headings(text)}
     rows: dict[str, re.Match] = {}
     for line_m in DISPATCH_STEP_BULLET_RE.finditer(section):
         line = line_m.group(0)

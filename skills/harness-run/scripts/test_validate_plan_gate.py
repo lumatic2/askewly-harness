@@ -526,3 +526,40 @@ _lbl_errs = validate(_lbl_numbered)
 assert any(f"line {_lbl_expected}:" in e and "invented hierarchy" in e for e in _lbl_errs), (_lbl_expected, _lbl_errs)
 
 print("plan gate M8 라벨 언급 면제 5건 PASS")
+
+# ── M24: leaf heading 괄호 꼬리말 1개 + 생성일 게이팅 (2026-08-22, h-e M24) ──
+# 실측 결함(h-e evidence/harness/2026-08-17-plan-gate-leaf-heading-tail.md):
+# 완료 메모 꼬리말을 붙이면 leaf 미인식 — 의존이 가리키면 missing leaf, 안 가리키면
+# 조용히 leaf 집합에서 빠진 채 PASS. 수정은 소급하지 않는다(코퍼스 26건 뒤집힘 실측).
+from validate_plan_gate import leaf_headings  # noqa: E402
+
+# 1) 발효일 이후 생성: 괄호 꼬리말 heading 이 leaf 로 인식되고 그래프·Risk 검증에 편입
+TAIL_MODERN = RISK_GOOD.replace("> 생성: 2026-07-23", "> 생성: 2026-08-22").replace(
+    "- [ ] **step-1 — validator**", "- [x] **step-1 — validator** (2026-08-22 완료)"
+)
+assert validate(TAIL_MODERN) == [], validate(TAIL_MODERN)
+assert [m.group("id") for m in leaf_headings(TAIL_MODERN)] == ["step-1", "step-2"]
+
+# 2) 소급 금지(negative — 게이팅이 뚫리면 여기서 FAIL): 발효일 이전 생성 문서의
+#    꼬리말 heading 은 leaf 가 아니다 — 종전 판정과 동일하게 missing leaf 로 남는다.
+TAIL_LEGACY = RISK_GOOD.replace(
+    "- [ ] **step-1 — validator**", "- [x] **step-1 — validator** (완료 메모)"
+)
+assert [m.group("id") for m in leaf_headings(TAIL_LEGACY)] == ["step-2"], leaf_headings(TAIL_LEGACY)
+assert any("missing leaf" in e for e in validate(TAIL_LEGACY)), validate(TAIL_LEGACY)
+
+# 3) 생성일 줄 자체가 없는 구 plan 도 소급하지 않는다
+TAIL_NODATE = GRAPH_GOOD.replace(
+    "- [ ] **step-1 — validator**", "- [x] **step-1 — validator** (완료)"
+)
+assert [m.group("id") for m in leaf_headings(TAIL_NODATE)] == ["step-2"]
+
+# 4) 허용은 괄호 1개뿐 — 괄호 2개는 발효일 이후에도 leaf 미인식 (heading-본문 경계 유지)
+TAIL_TWO = TAIL_MODERN.replace("(2026-08-22 완료)", "(a) (b)")
+assert [m.group("id") for m in leaf_headings(TAIL_TWO)] == ["step-2"]
+
+# 5) 괄호 밖 산문 꼬리말도 leaf 미인식
+TAIL_PROSE = TAIL_MODERN.replace("(2026-08-22 완료)", "완료했다")
+assert [m.group("id") for m in leaf_headings(TAIL_PROSE)] == ["step-2"]
+
+print("plan gate M24 leaf 꼬리말 5건 PASS")

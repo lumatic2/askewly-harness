@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `fe911ff16019` (2026-08-22 기준) · 파일: 29개
+- 커밋: `851a7251f272` (2026-08-22 기준) · 파일: 29개
 
 ## engine-scripts
 
@@ -13,7 +13,7 @@
 
 ## engine-templates
 
-- 커밋: `d8e214fd7b11` (2026-08-22 기준) · 파일: 2개
+- 커밋: `0b912d2019a2` (2026-08-22 기준) · 파일: 2개
 
 | 파일 | sha256(치환 후) |
 |---|---|
@@ -28,16 +28,16 @@
 | `harness-bootstrap/scripts/templates/tooling/ROADMAP.md` | `a15d937da8f5ba62` |
 | `harness-bootstrap/scripts/templates/workflow/DOMAIN.md` | `e11f95a27d50fed7` |
 | `harness-bootstrap/scripts/templates/workflow/PLAYBOOK_TEMPLATE.md` | `9a1ca41f5586bcdd` |
-| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `a13a1fab0c9a4f96` |
+| `harness-bootstrap/templates/PLAN_TEMPLATE.md` | `cd04f1196c9bdb77` |
 | `harness-bootstrap/templates/REPORT_TEMPLATE.md` | `37d8ed7cf1996422` |
-| `harness-done/SKILL.md` | `d1d9f11750dc0c66` |
-| `harness-plan/SKILL.md` | `39295b37d011c319` |
+| `harness-done/SKILL.md` | `e85a315e5770b5cd` |
+| `harness-plan/SKILL.md` | `9a5b3a6b8abd9001` |
 | `harness-plan/references/elicit.md` | `6fa8a81538678dec` |
 | `harness-run/SKILL.md` | `6adf60e71ad2c864` |
 | `harness-run/scripts/approve_harness_plan.py` | `f0acc27b7ae29fa7` |
 | `harness-run/scripts/check_checkout_freshness.py` | `5d0be645d40e7a48` |
 | `harness-run/scripts/fix_report_durability.py` | `160125f78d8ec230` |
-| `harness-run/scripts/harness_work_state.py` | `136c2deba8dbe870` |
+| `harness-run/scripts/harness_work_state.py` | `2d4c6c8c8d7a73ec` |
 | `harness-run/scripts/ledger_append.py` | `62c4b6f71b798e0a` |
 | `harness-run/scripts/report_close.py` | `c1e9332123f0cef5` |
 | `harness-run/scripts/roadmap_sync.py` | `ded69735b94452d6` |
@@ -47,8 +47,8 @@
 | `harness-run/scripts/test_ledger_append.py` | `93e38a7d2e82ad85` |
 | `harness-run/scripts/test_report_close.py` | `23cfb941385aef52` |
 | `harness-run/scripts/test_roadmap_sync.py` | `fca7fa56c679d1aa` |
-| `harness-run/scripts/test_validate_plan_gate.py` | `7057cd56f24bdb2b` |
-| `harness-run/scripts/validate_plan_gate.py` | `1386e2c0f8543c65` |
+| `harness-run/scripts/test_validate_plan_gate.py` | `d9311be37ecafea0` |
+| `harness-run/scripts/validate_plan_gate.py` | `d3facbf48bc75cb5` |
 | `harness-run/templates/REPORT_TEMPLATE.md` | `8352ec59c4eed243` |
 | `session-end/SKILL.md` | `c7cdb1b7d9462c05` |
 | `session-end/bin/handoff_commit.sh` | `1913f511a0054b7d` |
