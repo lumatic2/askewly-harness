@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `695c5667afb1` (2026-08-22 기준) · 파일: 29개
+- 커밋: `2f52de5ea0dc` (2026-08-22 기준) · 파일: 29개
 
 ## engine-scripts
 
@@ -50,7 +50,7 @@
 | `harness-run/scripts/test_validate_plan_gate.py` | `d9311be37ecafea0` |
 | `harness-run/scripts/validate_plan_gate.py` | `d3facbf48bc75cb5` |
 | `harness-run/templates/REPORT_TEMPLATE.md` | `8352ec59c4eed243` |
-| `session-end/SKILL.md` | `c7cdb1b7d9462c05` |
+| `session-end/SKILL.md` | `9ded7e3b77a7e339` |
 | `session-end/bin/handoff_commit.sh` | `1913f511a0054b7d` |
 | `session-end/bin/roadmap_hygiene.py` | `2f6194325169320f` |
 | `session-end/bin/session-log.py` | `439d43884693c8d7` |
