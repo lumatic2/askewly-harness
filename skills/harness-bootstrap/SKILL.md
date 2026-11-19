@@ -63,7 +63,7 @@ changesets/{README,CHANGESET_TEMPLATE}.md
 # 없으면 조용히 넘어가지 않고 즉시 실패한다: 부트스트랩은 반쯤 되면 더 나쁘다.
 AO_ROOT="${AO_ROOT:-/nonexistent}"
 INIT=""
-ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"
+ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | sort -V | tail -1)"; [ -d "${ASKEWLY_ROOT%/}/skills" ] || echo "askewly 플러그인 설치 위치를 못 찾았다 — 플러그인이 설치됐는지 확인하라" >&2
 for c in "${ASKEWLY_ROOT%/}/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do
   [ -f "$c" ] && INIT="$c" && break
 done

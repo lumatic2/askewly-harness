@@ -3,19 +3,19 @@ __pycache__/
 .DS_Store
 
 # 로컬 전용 — 재싱크 체크리스트 (공개 X)
-SYNC.md
+/SYNC.md
 
 # 하네스 운영 파일 — 제품에 들어가지 않는 것은 전부 로컬 전용
-CLAUDE.md
-CLAUDE.local.md
-AGENTS.md
-ROADMAP.md
-HANDOFF.md
-.harness/
-changesets/
-docs/BACKLOG.md
-docs/adr/
-plans/
-research/
-archive/
-tmp/
+/CLAUDE.md
+/CLAUDE.local.md
+/AGENTS.md
+/ROADMAP.md
+/HANDOFF.md
+/.harness/
+/changesets/
+/docs/BACKLOG.md
+/docs/adr/
+/plans/
+/research/
+/archive/
+/tmp/

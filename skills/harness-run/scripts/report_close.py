@@ -336,6 +336,9 @@ def suite_gate_check(root: Path, evidence_body: str) -> tuple[str | None, str | 
         # 알려진 실패만 남은 실패는 면제 없이 덮는다(M32 V-4) — 판정은 suite_gate 한 곳에
         known_ok, known_why, _ = suite_gate.known_failures_cover(root, record)
         if known_ok:
+            # 결정 로그: 세션이 목록에 넣은 줄을 §3 에 적어 사용자가 뒤집을 수 있게 한다 — waived 와 같은 수준으로 강제
+            if not is_unfilled(extract_line(evidence_body, "스위트")):
+                return (f"알려진 실패로 덮이는 스위트는 §3 에 `스위트: 알려진 실패 — <목록에 넣은 줄>` 이 필요하다 ({known_why})", None)
             return None, f"스위트 실패가 알려진 실패뿐: {known_why} ({suite_gate.KNOWN_FAILURES.as_posix()}){note}"
     return f"스위트가 실패 상태다({record.get('command')}, exit {record.get('exit_code')}) — 고치고 다시 돌린다: {command}", None
 

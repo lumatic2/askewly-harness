@@ -8,7 +8,7 @@ description: >-
 
 > 3종 세트: **`harness-plan`**(계획 — 문서만) → `harness-run`(실행 — git 소유) → `harness-done`(마감). 기계장치는 `harness-run/scripts/` 한 곳:
 > ```bash
-> ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"
+> ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | sort -V | tail -1)"; [ -d "${ASKEWLY_ROOT%/}/skills" ] || echo "askewly 플러그인 설치 위치를 못 찾았다 — 플러그인이 설치됐는지 확인하라" >&2
 > HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"
 > HARNESS_ROOT="$(python "$HARNESS_SCRIPTS/harness_focus.py" resolve)"   # 세션 초점 — 없으면 cwd
 > ```

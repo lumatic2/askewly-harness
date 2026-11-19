@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `e6131d3b2f36` (2026-11-20 기준) · 파일: 54개
+- 커밋: `28262b3b1dc1` (2026-11-20 기준) · 파일: 54개
 
 ## engine-scripts
 
@@ -13,7 +13,7 @@
 
 | 파일 | sha256(치환 후) |
 |---|---|
-| `harness-bootstrap/SKILL.md` | `c55b10b946c20331` |
+| `harness-bootstrap/SKILL.md` | `ec0280465749c0c5` |
 | `harness-bootstrap/scripts/init-ai-readiness.sh` | `c751800e5d2d751d` |
 | `harness-bootstrap/scripts/templates/learning/ANALYSIS_TEMPLATE.md` | `4a69f59d479921ff` |
 | `harness-bootstrap/scripts/templates/learning/EXPERIMENT_TEMPLATE.md` | `7937cbc8357088b3` |
@@ -22,25 +22,25 @@
 | `harness-bootstrap/scripts/templates/tooling/CHANGESET_TEMPLATE.md` | `4cb4250f5cbe4ade` |
 | `harness-bootstrap/scripts/templates/workflow/DOMAIN.md` | `e11f95a27d50fed7` |
 | `harness-bootstrap/scripts/templates/workflow/PLAYBOOK_TEMPLATE.md` | `9a1ca41f5586bcdd` |
-| `harness-done/SKILL.md` | `db84e28864026957` |
+| `harness-done/SKILL.md` | `9047abcbb833f6da` |
 | `harness-done/agents/openai.yaml` | `17a0c8b652dd2391` |
 | `harness-done/bin/close_milestone.py` | `185d8c0ae68b173b` |
 | `harness-done/bin/report_evidence.py` | `d313aea36d6edfd9` |
 | `harness-done/bin/retire_check.py` | `0fee46b2abaa4cab` |
-| `harness-done/bin/suite_gate.py` | `7fc12189ff20d294` |
+| `harness-done/bin/suite_gate.py` | `2b48f491e0334be6` |
 | `harness-done/references/rationale.md` | `57c26f4752550f94` |
 | `harness-done/templates/DROP_TEMPLATE.md` | `41ed90d2654d6661` |
 | `harness-done/templates/REPORT_TEMPLATE.md` | `033d5187ceceddc5` |
 | `harness-done/tests/test_close_milestone.py` | `38eda3122569b9bd` |
 | `harness-done/tests/test_report_evidence.py` | `de604be8488875f7` |
 | `harness-done/tests/test_retire_check.py` | `133d4822c8b57ca9` |
-| `harness-done/tests/test_suite_gate.py` | `d67115f19ac5877d` |
-| `harness-plan/SKILL.md` | `8c460f49debd1b35` |
+| `harness-done/tests/test_suite_gate.py` | `93d189f3440a3da5` |
+| `harness-plan/SKILL.md` | `4d9c854a0adf3fa0` |
 | `harness-plan/agents/openai.yaml` | `2a5bf8bb5743f36f` |
 | `harness-plan/references/elicit.md` | `111ec5b7ee6ac7e6` |
 | `harness-plan/references/rationale.md` | `c6cb2b7157e9a145` |
 | `harness-plan/templates/PLAN_TEMPLATE.md` | `b825261fc16db2de` |
-| `harness-run/SKILL.md` | `4f9339a0ee7dbba2` |
+| `harness-run/SKILL.md` | `77ff453f8345dd12` |
 | `harness-run/agents/openai.yaml` | `4e23829c3bee2bf6` |
 | `harness-run/references/rationale.md` | `83475a01681df2d2` |
 | `harness-run/scripts/approve_harness_plan.py` | `b4207004e80561db` |
@@ -50,7 +50,7 @@
 | `harness-run/scripts/harness_focus.py` | `b3ce7d9211425562` |
 | `harness-run/scripts/harness_work_state.py` | `ee58599f8a3cd850` |
 | `harness-run/scripts/ledger_append.py` | `86530f81b897aa1b` |
-| `harness-run/scripts/report_close.py` | `297aaed88995da2c` |
+| `harness-run/scripts/report_close.py` | `f05c595c63fba758` |
 | `harness-run/scripts/roadmap_sync.py` | `58a8d907fcc7e3bc` |
 | `harness-run/scripts/test_approve_harness_plan.py` | `f692d3c285b39e93` |
 | `harness-run/scripts/test_check_checkout_freshness.py` | `cda6bbb95cd0e08a` |
@@ -62,7 +62,7 @@
 | `harness-run/scripts/test_roadmap_sync.py` | `92462ee1ce16d331` |
 | `harness-run/scripts/test_validate_plan_gate.py` | `1c17bf1e9ad7b9fe` |
 | `harness-run/scripts/validate_plan_gate.py` | `8b9e04f10e1f093f` |
-| `session-end/SKILL.md` | `8475354ef7b2e338` |
+| `session-end/SKILL.md` | `df9cea877b607603` |
 | `session-end/bin/claude_md_check.py` | `71e99e328c6dbbb8` |
 | `session-end/bin/handoff_commit.sh` | `36bfefa6096fdb9c` |
 | `session-end/bin/handoff_merge.py` | `5f7a6090c46a963c` |

@@ -804,7 +804,10 @@ def test_known_failures_only_covers(tmp_path, capsys):
     git(root, "add", "docs/known-failures.md")
     git(root, "commit", "-qm", "known")
     assert suite_gate.main(["--root", str(root), "--check"]) == 0
-    assert close(root, note) == 0  # 마감도 면제 없이 닫힌다
+    # 마감도 면제 없이 닫힌다 — 단 §3 에 `스위트: 알려진 실패 — …` 줄이 있어야 사용자가 뒤집을 자리가 생긴다(감사 권고)
+    assert close(root, note) == 1
+    note.write_text(NOTE.format(extra="- 스위트: 알려진 실패 — test_flaky_net·test_win_path (main 에서도 빨강)"), encoding="utf-8")
+    assert close(root, note) == 0
 
 
 def test_new_failure_not_covered(tmp_path, capsys):
@@ -940,3 +943,41 @@ def test_fail_with_code_commit_midway_not_covered(tmp_path):
     _known(root, "- test_flaky_net — 네트워크 (2026-11-19)")
     ok, why = suite_gate.record_covers(root)
     assert not ok
+
+
+# ---- M32 마감 감사 반영: 요약 수가 없거나 복합 명령이면 덮지 않는다 ----
+
+def test_no_summary_count_not_covered(tmp_path):
+    """러너 요약(실패 수)을 못 읽으면 이름 일부만 뽑혔을 수 있다 — 덮지 않는다."""
+    root, _ = make_repo(tmp_path)
+    out = "  FAIL verify:mobile-check (exit 1)\n게이트가 인덱스에 올린 경로 1개:\n  x.txt\n"
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(out)]) == 1
+    assert record(root)["failures"] == []
+    _known(root, "- verify:mobile-check — 기기 의존 (2026-11-20)")
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+
+
+def test_verify_all_fails_summary(tmp_path):
+    """a-private-repo verify:all 요약 `FAILS N` 을 읽는다 — 수가 맞으면 덮고, 잔여물 FAIL 이 끼면 덮지 않는다."""
+    ok_out = "FAILS 1\n\n  FAIL verify:mobile-check (exit 1)\n        tail\n        log: x\n"
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(ok_out)]) == 1
+    _known(root, "- verify:mobile-check — 기기 의존 (2026-11-20)")
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
+    leak_out = "FAILS 2\n\n  FAIL verify:mobile-check (exit 1)\n\n  FAIL index-leak (게이트가 인덱스에 올린 경로 1개)\n"
+    (tmp_path / "b").mkdir()
+    root2, _ = make_repo(tmp_path / "b")
+    assert suite_gate.main(["--root", str(root2), "--command", _fail_with(leak_out)]) == 1
+    _known(root2, "- verify:mobile-check — 기기 의존 (2026-11-20)")
+    assert suite_gate.main(["--root", str(root2), "--check"]) == 1
+
+
+def test_compound_command_not_covered(tmp_path):
+    """`a && b` 에서 a 가 알려진 실패로 멈추면 b 는 돌지 않았다 — 덮지 않는다(따옴표 안의 ; 는 복합이 아니다)."""
+    out = "FAILED tests/test_a.py::test_flaky_net - boom\n1 failed in 0.1s\n"
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(out) + " && echo later"]) == 1
+    assert record(root)["failures"] == []
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-20)")
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+    assert suite_gate.is_compound(_fail_with(out)) is False

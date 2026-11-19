@@ -14,7 +14,7 @@ codex: true
 
 ```bash
 # 둘 다 ~/.claude 우선 — Claude 쪽은 소스 정션이라 가장 새것이고, 없는 기기(Codex 전용)만 ~/.codex 사본을 쓴다
-ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"
+ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | sort -V | tail -1)"; [ -d "${ASKEWLY_ROOT%/}/skills" ] || echo "askewly 플러그인 설치 위치를 못 찾았다 — 플러그인이 설치됐는지 확인하라" >&2
 HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"
 SE_BIN="${ASKEWLY_ROOT%/}/skills/session-end/bin"
 HARNESS_ROOT="$(python "$HARNESS_SCRIPTS/harness_focus.py" resolve)"   # 초점 없으면 cwd

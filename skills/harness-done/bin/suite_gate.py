@@ -297,7 +297,14 @@ _COUNT_PATTERNS = (
     re.compile(r"\b(\d+) (?:failed|errors?)\b"),            # pytest `2 failed, 1 error in` · jest `Tests: 2 failed`
     re.compile(r"^# fail (\d+)$"),                           # TAP · node --test
     re.compile(r"^\u2716 (?:fail(?:ing)?|failures?) (\d+)"),  # node --test spec 요약
+    re.compile(r"^FAILS (\d+)$"),                             # a-private-repo verify:all
 )
+_QUOTED = re.compile(r"\"(?:\\.|[^\"\\])*\"|'[^']*'")
+
+
+def is_compound(command: str) -> bool:
+    """셸 복합 명령(`&&`·`||`·`;`)인가 — 따옴표 안은 보지 않는다. 앞 단계가 멈추면 뒤 단계가 안 돌았으니 대조하지 않는다."""
+    return bool(re.search(r"&&|\|\||;", _QUOTED.sub("", command)))
 _EARLY_STOP = re.compile(r"(?:^|\s)(?:-x|--exitfirst|--maxfail[= ]\S+|--bail\S*|--fail-fast)(?:\s|$)")
 
 
@@ -313,12 +320,13 @@ def reported_failure_count(text: str) -> int | None:
 
 
 def failure_names_for(command: str, text: str) -> list[str]:
-    """기록할 실패 이름. 중간에 멈춘 실행(-x·--maxfail 등)이거나 요약 수와 뽑은 수가 다르면 빈 목록 — 덮을 수 없다."""
-    if _EARLY_STOP.search(command):
+    """기록할 실패 이름. 중간에 멈춘 실행(-x·--maxfail 등)·복합 명령이거나, 러너 요약의 실패 수를 못 읽었거나
+    그 수가 뽑은 이름 수와 다르면 빈 목록 — 덮을 수 없다(M32 마감 감사: 이름 일부만 뽑힌 실패를 덮지 않는다)."""
+    if _EARLY_STOP.search(command) or is_compound(command):
         return []
     names = extract_failure_names(text)
     count = reported_failure_count(text)
-    if count is not None and count != len(names):
+    if count is None or count != len(names):
         return []
     return names
 

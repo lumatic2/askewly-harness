@@ -86,7 +86,8 @@ EXCLUDE_PREFIX = (
 #   Codex: 바꿔 주지 않는다 → 셸에서 빈 값으로 풀리고, 플러그인 캐시에서 찾는다.
 PLUGIN_ROOT_LINE = (
     'ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || '
-    'ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"'
+    'ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | sort -V | tail -1)"; '
+    '[ -d "${ASKEWLY_ROOT%/}/skills" ] || echo "askewly 플러그인 설치 위치를 못 찾았다 — 플러그인이 설치됐는지 확인하라" >&2'
 )
 _SCRIPTS_LINE = 'HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"'
 _QUOTED_HEADER = (
@@ -108,7 +109,7 @@ PLUGIN_P = [
      r"~/\.(?:claude|codex)/skills/", "<플러그인 루트>/skills/", 4),
 ]
 # Codex 표시 파일의 스킬 호출 이름 — 플러그인으로 깔리면 `<플러그인>:<스킬>` 이다.
-OPENAI_YAML_P = (r"\$(harness-(?:plan|run|done|bootstrap)|session-end)\b", r"$askewly:\1")
+OPENAI_YAML_P = (r"\$(harness-(?:plan|run|done|bootstrap)|session-end)(?![\w-])", r"$askewly:\1")
 
 # ── 디커플링 치환 규칙 ───────────────────────────────────────────────────
 # (대상 파일, 정규식, 치환문, 최소 적중 수). 최소 적중에 못 미치면 소스가
@@ -190,7 +191,7 @@ GLOBAL_P = [
 # ── leak-check — 출고 트리에 남으면 안 되는 패턴 ─────────────────────────
 LEAK_PATTERNS = [
     r"\byusun",
-    r"(?<!github\.com/)lumatic(?!2/askewly-harness)",  # 공개 레포 주소·설치 명령의 레포 이름은 개인 배선이 아니다
+    r"lumatic",                            # 허용 문자열(LEAK_ALLOW)은 검사 전에 지운다
     r"\.(?:claude|codex)/skills",         # 폴더 복사 설치 시절의 고정 경로 — 플러그인에서는 안 맞는다
     r"[Cc]:\\+Users\\+(?!<you>)[A-Za-z]",
     r"/Users/(?!<you>)[a-z]",
@@ -205,6 +206,11 @@ LEAK_PATTERNS = [
     r"upstage",
     r"spawn_chain|sync_stop_gate|update_evidence_ledger",
 ]
+# 개인 배선이 아닌 공개 정보 — 이 레포 주소와, 따옴표·공백으로 끝나는 계정 주소만.
+# 같은 계정의 다른 레포 주소는 허용하지 않는다.
+LEAK_ALLOW = re.compile(
+    r"(?:github\.com/)?lumatic2/askewly-harness(?![\w-])|github\.com/lumatic2(?=[\"'\s>)]|$)"
+)
 LEAK_SCAN_SKIP = {"sync.py", "SYNC.md"}  # 규칙 자신은 패턴을 담는다
 TEXT_SUFFIXES = {".md", ".py", ".sh", ".ps1", ".txt", ".json", ".yaml", ".yml"}
 
@@ -282,6 +288,7 @@ def leak_check(tree: dict[str, bytes]) -> list[str]:
             continue
         text = data.decode("utf-8", errors="replace")
         for i, line in enumerate(text.splitlines(), 1):
+            line = LEAK_ALLOW.sub("", line)
             for pat in LEAK_PATTERNS:
                 if re.search(pat, line):
                     hits.append(f"{rel}:{i}: [{pat}] {line.strip()[:100]}")
@@ -289,15 +296,15 @@ def leak_check(tree: dict[str, bytes]) -> list[str]:
     return hits
 
 
-def scan_repo_tree() -> dict[str, bytes]:
+def scan_repo_tree(root: Path = ROOT) -> dict[str, bytes]:
     """제품에 들어가는 파일만 본다 — 추적 파일과, gitignore 에 안 걸린 미추적 파일."""
     out = subprocess.run(
-        ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        ["git", "-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True, check=True,
     ).stdout.decode("utf-8")
     tree: dict[str, bytes] = {}
     for rel in sorted(r for r in out.split("\0") if r.strip()):
-        p = ROOT / rel
+        p = root / rel
         if p.is_file():
             tree[rel] = p.read_bytes()
     return tree
