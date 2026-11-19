@@ -406,9 +406,17 @@ def main(argv: list[str] | None = None) -> int:
         completed_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
         fields.setdefault("shell", args.shell)
         end_head = (_git(root, "rev-parse", "HEAD") or "").strip() or None
+        head = end_head
         if start_head != end_head:
-            fields.update(status="fail", reason="실행 중 HEAD 변경")
-        return write_record(root, **fields, head=end_head, start_head=start_head,
+            # 실행 중 기록 파일(노트·changeset·HANDOFF 등)만 커밋했으면 돈 코드는 그대로다 — 시작 HEAD 로
+            # 기록하고 이후 커밋은 record_scope 가 덮는다(2026-11-19 M30 마감 마찰: 5분 재실행 1회).
+            moved_ok = bool(start_head and end_head) and record_scope(
+                root, end_head, record={"head": start_head})[0]
+            if moved_ok:
+                head = start_head
+            else:
+                fields.update(status="fail", reason="실행 중 HEAD 변경")
+        return write_record(root, **fields, head=head, start_head=start_head,
                             started_at=started_at, completed_at=completed_at,
                             elapsed_seconds=round(time.monotonic() - started, 3))
 

@@ -206,3 +206,21 @@ def test_full_close_refused_inside_fanout_worktree(tmp_path, capsys):
     assert not (root / ".harness" / "execution-ledger.jsonl").exists()
     assert 'id="M1" status="active"' in (root / "ROADMAP.md").read_text(encoding="utf-8")
     assert (root / "plans" / "2026-11-16-M1-x.md").exists()
+
+
+def test_pending_milestone_needs_force_roadmap(tmp_path, capsys):
+    """계획 승인 없이 pending 으로 남은 milestone — 기본은 거부, --force-roadmap 이면 닫는다(2026-11-19 M27)."""
+    root, args = make_repo(tmp_path)
+    text = (root / "ROADMAP.md").read_text(encoding="utf-8")
+    (root / "ROADMAP.md").write_text(text.replace('status="active"', 'status="pending"'), encoding="utf-8")
+    git(root, "commit", "-qam", "pending")
+    head = git(root, "rev-parse", "HEAD").strip()
+    (root / ".harness" / "suite-gate.json").write_text(
+        json.dumps({"status": "pass", "head": head, "command": "pytest", "dirty": 0}), encoding="utf-8")
+    note = root / "archive" / "reports" / "2026-11-16-M1-x.md"
+    report_evidence.main(["--root", str(root), "--base", "HEAD", "--write", str(note)])
+    assert close_milestone.main(args) == 1
+    assert "roadmap complete" in capsys.readouterr().out
+    assert 'status="pending"' in (root / "ROADMAP.md").read_text(encoding="utf-8")
+    assert close_milestone.main(args + ["--force-roadmap"]) == 0
+    assert 'id="M1" status="completed"' in (root / "ROADMAP.md").read_text(encoding="utf-8")

@@ -232,14 +232,37 @@ def test_multiple_commands_preserve_all_output(tmp_path, monkeypatch):
     assert "first-marker" in text and "second-marker" in text
 
 
+def _commit_during(rel: str) -> str:
+    """스위트 명령 자체가 실행 중에 파일 하나를 커밋한다 — 「도는 동안 다른 커밋」 재현."""
+    code = (
+        "import pathlib,subprocess;"
+        f"p=pathlib.Path({rel!r});p.parent.mkdir(parents=True,exist_ok=True);p.write_text('d');"
+        "g=['git','-c','user.name=t','-c','user.email=t@example.invalid'];"
+        f"subprocess.run(g+['add',{rel!r}],check=True);"
+        "subprocess.run(g+['commit','-qm','during'],check=True)"
+    )
+    return f'"{sys.executable}" -c "{code}"'
+
+
 def test_head_change_during_run_fails(tmp_path):
     root, note = make_repo(tmp_path)
-    command = 'git -c user.name=t -c user.email=t@example.invalid commit --allow-empty -qm during'
-    assert suite_gate.main(["--root", str(root), "--command", command]) == 1
+    assert suite_gate.main(["--root", str(root), "--command", _commit_during("src/code.py")]) == 1
     rec = record(root)
     assert rec["status"] == "fail"
+    assert rec["reason"] == "실행 중 HEAD 변경"
     assert rec["start_head"] != rec["head"]
     assert close(root, note) == 1
+
+
+def test_record_only_commit_during_run_keeps_pass_at_start_head(tmp_path):
+    root, _ = make_repo(tmp_path)
+    start = head_of(root)
+    assert suite_gate.main(["--root", str(root), "--command", _commit_during("changesets/x.md")]) == 0
+    rec = record(root)
+    assert rec["status"] == "pass"
+    assert rec["head"] == start and rec["start_head"] == start
+    assert head_of(root) != start
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
 
 
 def test_nonpositive_timeout_is_usage_error(tmp_path):

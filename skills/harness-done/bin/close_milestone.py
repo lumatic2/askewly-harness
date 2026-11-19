@@ -159,6 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--roadmap-summary", default=None, help="ROADMAP 한 줄 (기본 = --summary)")
     p.add_argument("--branch", action="store_true",
                    help="팬아웃 갈래 닫기 — report_close 만 돌리고 ROADMAP·계획서·compact 는 건드리지 않는다")
+    p.add_argument("--force-roadmap", action="store_true",
+                   help="ROADMAP 마커가 active 가 아닌(계획 승인 없이 pending·blocked 로 남은) milestone 을 닫는다 — "
+                        "roadmap_sync complete --force. 사용자가 이 milestone 마감을 승인했을 때만 쓴다")
     a = p.parse_args(argv)
     root = a.root.resolve()
     py = sys.executable
@@ -190,7 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     roadmap = root / "ROADMAP.md"
     if roadmap.exists():
         if not run("roadmap complete", [py, str(SCRIPTS / "roadmap_sync.py"), "complete", "--milestone", a.milestone,
-                                        "--evidence", evidence, "--summary", a.roadmap_summary or a.summary], root):
+                                        "--evidence", evidence, "--summary", a.roadmap_summary or a.summary]
+                                       + (["--force"] if a.force_roadmap else []), root):
             return 1
     else:
         print("[close] ROADMAP.md 없음 — complete·compact 건너뜀")

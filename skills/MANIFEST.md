@@ -5,7 +5,7 @@
 
 ## skills
 
-- 커밋: `8eba95bf9fda` (2026-11-19 기준) · 파일: 54개
+- 커밋: `1e2caf7de753` (2026-11-19 기준) · 파일: 54개
 
 ## engine-scripts
 
@@ -22,24 +22,24 @@
 | `harness-bootstrap/scripts/templates/tooling/CHANGESET_TEMPLATE.md` | `4cb4250f5cbe4ade` |
 | `harness-bootstrap/scripts/templates/workflow/DOMAIN.md` | `e11f95a27d50fed7` |
 | `harness-bootstrap/scripts/templates/workflow/PLAYBOOK_TEMPLATE.md` | `9a1ca41f5586bcdd` |
-| `harness-done/SKILL.md` | `dd9b91ce5411c20d` |
+| `harness-done/SKILL.md` | `f0a011cf63b25e7a` |
 | `harness-done/agents/openai.yaml` | `c3bb8ae4d0ea2f87` |
-| `harness-done/bin/close_milestone.py` | `3d1834521885a4b3` |
+| `harness-done/bin/close_milestone.py` | `185d8c0ae68b173b` |
 | `harness-done/bin/report_evidence.py` | `d313aea36d6edfd9` |
 | `harness-done/bin/retire_check.py` | `0fee46b2abaa4cab` |
-| `harness-done/bin/suite_gate.py` | `e07ad14b9d9b0f54` |
+| `harness-done/bin/suite_gate.py` | `34db2219b8f84023` |
 | `harness-done/references/rationale.md` | `57c26f4752550f94` |
 | `harness-done/templates/DROP_TEMPLATE.md` | `41ed90d2654d6661` |
 | `harness-done/templates/REPORT_TEMPLATE.md` | `033d5187ceceddc5` |
-| `harness-done/tests/test_close_milestone.py` | `c1a61f5ef856b884` |
+| `harness-done/tests/test_close_milestone.py` | `38eda3122569b9bd` |
 | `harness-done/tests/test_report_evidence.py` | `de604be8488875f7` |
 | `harness-done/tests/test_retire_check.py` | `133d4822c8b57ca9` |
-| `harness-done/tests/test_suite_gate.py` | `e024b73d094b16cc` |
-| `harness-plan/SKILL.md` | `94c2a8e4204186f2` |
+| `harness-done/tests/test_suite_gate.py` | `14b0b875bcf52321` |
+| `harness-plan/SKILL.md` | `b01cf0c9ae7f43df` |
 | `harness-plan/agents/openai.yaml` | `7633ab0d79be9868` |
 | `harness-plan/references/elicit.md` | `111ec5b7ee6ac7e6` |
 | `harness-plan/references/rationale.md` | `c6cb2b7157e9a145` |
-| `harness-plan/templates/PLAN_TEMPLATE.md` | `86ff845439af4d7d` |
+| `harness-plan/templates/PLAN_TEMPLATE.md` | `b825261fc16db2de` |
 | `harness-run/SKILL.md` | `2a0d36edb8c8889b` |
 | `harness-run/agents/openai.yaml` | `36957df42c948dd3` |
 | `harness-run/references/rationale.md` | `83475a01681df2d2` |
