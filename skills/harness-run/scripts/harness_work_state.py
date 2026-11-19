@@ -1327,9 +1327,11 @@ def main() -> int:
             if not approved:
                 print(f"연쇄 넘기기: started 보류 — 승인 영수증 불일치: {why}")
                 return 1
-            import chain_handoff
-
-            acts = chain_handoff.on_resume(str(args.root), args.work_id)
+            try:
+                import chain_handoff
+            except ImportError:  # 공개판에는 세션 교대 장치가 없다
+                chain_handoff = None
+            acts = chain_handoff.on_resume(str(args.root), args.work_id) if chain_handoff else []
             if acts:
                 print("연쇄 넘기기: " + " · ".join(acts))
         return 0 if ok else 1

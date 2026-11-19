@@ -68,6 +68,25 @@ def test_skill_name_rewrite_respects_boundary():
     assert re.sub(pat, repl, "$harness-plan-notes") == "$harness-plan-notes"
 
 
+def test_shipped_scripts_do_not_hard_import_excluded_modules():
+    """공개판에서 뺀 파일을 출고 스크립트가 무조건 불러오면 실행 중에 죽는다 — try 로 감싼 것만 허용."""
+    excluded = {Path(e).stem for e in sync.EXCLUDE if e.endswith(".py") and "/test_" not in e}
+    bad = []
+    for p in sorted(SKILLS.rglob("*.py")):
+        if p.name.startswith("test_"):
+            continue
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        for i, line in enumerate(lines):
+            m = re.match(r"\s*(?:import|from)\s+([A-Za-z_][\w]*)", line)
+            if not m or m.group(1) not in excluded:
+                continue
+            prev = next((l.strip() for l in reversed(lines[:i]) if l.strip()), "")
+            if prev != "try:":
+                bad.append(f"{p.relative_to(SKILLS).as_posix()}:{i + 1}: {line.strip()}")
+    assert excluded, "제외 목록을 읽지 못했다"
+    assert not bad, "제외된 모듈을 무조건 불러온다:\n" + "\n".join(bad)
+
+
 def test_leak_check_catches_fixed_path():
     """Failure probe — 고정 경로 한 줄이 든 트리는 leak-check 가 잡아야 한다."""
     line = 'HARNESS_SCRIPTS="$HOME/.claude' + '/skills/harness-run/scripts"\n'

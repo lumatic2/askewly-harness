@@ -2,6 +2,10 @@
 
 Each release is a snapshot of how the harness is actually run at that date.
 
+## 0.1.4 — 2026-11-20
+
+- Taking over work from another session (`harness_work_state.py resume`) no longer fails on a module that is not part of this distribution. Found while running the full flow on Codex.
+
 ## 0.1.3 — 2026-11-20
 
 - README gives the Claude Code update as the two commands that were actually exercised (`/plugin marketplace update` then `/plugin update`).

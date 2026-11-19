@@ -48,7 +48,7 @@
 | `harness-run/scripts/check_worktree_scope.py` | `eeaf3a4d6412f112` |
 | `harness-run/scripts/fix_report_durability.py` | `160125f78d8ec230` |
 | `harness-run/scripts/harness_focus.py` | `b3ce7d9211425562` |
-| `harness-run/scripts/harness_work_state.py` | `ee58599f8a3cd850` |
+| `harness-run/scripts/harness_work_state.py` | `7c8e4d1d19cccf5f` |
 | `harness-run/scripts/ledger_append.py` | `86530f81b897aa1b` |
 | `harness-run/scripts/report_close.py` | `f05c595c63fba758` |
 | `harness-run/scripts/roadmap_sync.py` | `58a8d907fcc7e3bc` |

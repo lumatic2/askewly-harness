@@ -102,6 +102,14 @@ PLUGIN_P = [
      r'HARNESS_SCRIPTS="\$HOME/\.claude/skills/harness-run/scripts"; \[ -d "\$HARNESS_SCRIPTS" \] \|\| HARNESS_SCRIPTS="\$HOME/\.codex/skills/harness-run/scripts"\n'
      r'SE_BIN="\$HOME/\.claude/skills/session-end/bin"; \[ -d "\$SE_BIN" \] \|\| SE_BIN="\$HOME/\.codex/skills/session-end/bin"\n',
      f'{PLUGIN_ROOT_LINE}\n{_SCRIPTS_LINE}\nSE_BIN="${{ASKEWLY_ROOT%/}}/skills/session-end/bin"\n', 1),
+    # 공개판에서 뺀 세션 교대 장치(chain_handoff)를 resume 가 무조건 불러온다 — 없으면 건너뛴다.
+    ("harness-run/scripts/harness_work_state.py",
+     r"            import chain_handoff\n\n            acts = chain_handoff\.on_resume\(str\(args\.root\), args\.work_id\)\n",
+     "            try:\n"
+     "                import chain_handoff\n"
+     "            except ImportError:  # 공개판에는 세션 교대 장치가 없다\n"
+     "                chain_handoff = None\n"
+     "            acts = chain_handoff.on_resume(str(args.root), args.work_id) if chain_handoff else []\n", 1),
     ("session-end/SKILL.md",
      r"# 둘 다 ~/\.claude 우선 — [^\n]*\n",
      "# 플러그인 설치 위치에서 찾는다 — Claude Code 는 아래 변수를 실제 경로로 바꿔 주고, Codex 는 플러그인 캐시에서 찾는다\n", 1),
