@@ -102,6 +102,9 @@ PLUGIN_P = [
      r'HARNESS_SCRIPTS="\$HOME/\.claude/skills/harness-run/scripts"; \[ -d "\$HARNESS_SCRIPTS" \] \|\| HARNESS_SCRIPTS="\$HOME/\.codex/skills/harness-run/scripts"\n'
      r'SE_BIN="\$HOME/\.claude/skills/session-end/bin"; \[ -d "\$SE_BIN" \] \|\| SE_BIN="\$HOME/\.codex/skills/session-end/bin"\n',
      f'{PLUGIN_ROOT_LINE}\n{_SCRIPTS_LINE}\nSE_BIN="${{ASKEWLY_ROOT%/}}/skills/session-end/bin"\n', 1),
+    ("session-end/SKILL.md",
+     r"# 둘 다 ~/\.claude 우선 — [^\n]*\n",
+     "# 플러그인 설치 위치에서 찾는다 — Claude Code 는 아래 변수를 실제 경로로 바꿔 주고, Codex 는 플러그인 캐시에서 찾는다\n", 1),
     ("harness-done/SKILL.md",
      r"`python ~/\.claude/skills/harness-done/bin/retire_check\.py ",
      '`python "$HARNESS_SCRIPTS/../../harness-done/bin/retire_check.py" ', 1),

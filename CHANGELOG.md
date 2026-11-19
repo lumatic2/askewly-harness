@@ -2,6 +2,11 @@
 
 Each release is a snapshot of how the harness is actually run at that date.
 
+## 0.1.3 — 2026-11-20
+
+- README gives the Claude Code update as the two commands that were actually exercised (`/plugin marketplace update` then `/plugin update`).
+- `session-end` no longer carries a comment describing the old copy-install layout.
+
 ## 0.1.2 — 2026-11-20
 
 - On Codex, skills pick the newest installed plugin version by version order and say so when the plugin cannot be found, instead of failing later on a missing script path.

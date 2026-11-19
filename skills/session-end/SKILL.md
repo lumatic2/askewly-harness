@@ -13,7 +13,7 @@ codex: true
 세션을 마무리한다. 세 모드 — **끝내기**(기본) · **`--checkpoint`**(중간 저장) · **`--relay`**(넘기고 마감 — 마감한 뒤 새 세션을 띄워 일을 잇게 한다. 2026-11-18, 구 `--chain` 을 흡수). 하는 일은 다섯, 이 순서다: **문서 위생**(끝내기·직접 부른 `--relay`), **데이터 레포 점검**(끝내기·`--relay` — 약식 `--relay` 는 점검·push 만. 6축 인입은 사용자가 넣으라고 한 것만), **HANDOFF.md 병합**(전부 — 레포 공용 할 일 큐에 항목 단위로 — 쓰는 일의 맨 끝, 마감당 한 번), **새 세션 발사**(`--relay` 만 — HANDOFF push 뒤), **채팅 요약**(끝내기·직접 부른 `--relay`, 저장하지 않는다). Tasks 대조·저널 요약 저장은 하지 않는다 — 세션 **원문**은 Stop 훅(`session_archive.py capture`)이 매 세션 `$HARNESS_JOURNAL_DIR`/agent-sessions/` 에 자동으로 쌓는다(요약 저장 중단, 원문은 영구).
 
 ```bash
-# 둘 다 ~/.claude 우선 — Claude 쪽은 소스 정션이라 가장 새것이고, 없는 기기(Codex 전용)만 ~/.codex 사본을 쓴다
+# 플러그인 설치 위치에서 찾는다 — Claude Code 는 아래 변수를 실제 경로로 바꿔 주고, Codex 는 플러그인 캐시에서 찾는다
 ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | sort -V | tail -1)"; [ -d "${ASKEWLY_ROOT%/}/skills" ] || echo "askewly 플러그인 설치 위치를 못 찾았다 — 플러그인이 설치됐는지 확인하라" >&2
 HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"
 SE_BIN="${ASKEWLY_ROOT%/}/skills/session-end/bin"

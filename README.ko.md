@@ -51,7 +51,14 @@
 /plugin install askewly@askewly
 ```
 
-업데이트: `/plugin marketplace update askewly`
+업데이트(끝나면 Claude Code 를 다시 시작합니다):
+
+```text
+/plugin marketplace update askewly
+/plugin update askewly@askewly
+```
+
+새 판은 판 번호가 바뀌었을 때만 내려옵니다.
 
 **Codex**
 

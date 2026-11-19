@@ -51,7 +51,14 @@ This repository is the plugin distribution of one person's harness for running t
 /plugin install askewly@askewly
 ```
 
-Update: `/plugin marketplace update askewly`
+Update (then restart Claude Code):
+
+```text
+/plugin marketplace update askewly
+/plugin update askewly@askewly
+```
+
+A new version arrives only when the release number changes.
 
 **Codex**
 

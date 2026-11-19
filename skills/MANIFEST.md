@@ -62,7 +62,7 @@
 | `harness-run/scripts/test_roadmap_sync.py` | `92462ee1ce16d331` |
 | `harness-run/scripts/test_validate_plan_gate.py` | `1c17bf1e9ad7b9fe` |
 | `harness-run/scripts/validate_plan_gate.py` | `8b9e04f10e1f093f` |
-| `session-end/SKILL.md` | `df9cea877b607603` |
+| `session-end/SKILL.md` | `7e52fd466c9401ab` |
 | `session-end/bin/claude_md_check.py` | `71e99e328c6dbbb8` |
 | `session-end/bin/handoff_commit.sh` | `36bfefa6096fdb9c` |
 | `session-end/bin/handoff_merge.py` | `5f7a6090c46a963c` |
