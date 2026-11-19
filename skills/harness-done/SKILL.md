@@ -1,67 +1,91 @@
 ---
 name: harness-done
 description: >-
-  하네스 흐름 3/3 — 완료. milestone 완료 판정→완료 보고서→report_close→ROADMAP 갱신→다음 milestone 연쇄까지의 마감 의식을 담당한다. 사용자가 "/harness-done", "하네스 마감", "milestone 닫아줘", "완료 보고서 써줘"라고 말하거나, /harness-run 이 milestone DoD 를 충족한 완료 경계에서 사용한다. 실행은 /harness-run, 새 계획은 /harness-plan, 주기 감사는 /harness-review.
+  하네스 흐름 3/3 — 완료. milestone 완료 판정·스위트 → 코드 리뷰 → 완료 노트 → 마감 감사 → 닫기(report_close·ROADMAP) → 다음 milestone 연쇄까지의 마감을 담당한다. 진입은 사용자가 `/harness-done` 을 직접 치거나 `/harness-run` 이 milestone DoD 를 충족한 완료 경계에서 넘길 때뿐이다 — 하네스 진입점은 /harness-plan(사용자가 슬래시나 말로 이름을 부른다)이고 이 스킬은 그 연속 단계라 모델이 잇는다. "마감해줘" 같은 자연어만으로 새로 켜지 않는다. 예외는 중단 종결 하나 — 사용자가 `/harness-done drop <id>` 를 치거나 "이 milestone 접자"·"M1 중단하자"처럼 외부 결과로 milestone 을 접겠다고 명시하면 중단 갈래로 진입한다(모델이 스스로 중단을 판정하지는 않는다). 실행은 /harness-run, 새 계획은 /harness-plan.
 ---
 
-# /harness-done — 완료 판정 → 마감 → 되먹임
+# /harness-done — 완료 판정 → 마감 → 연쇄
 
-> 하네스 3종 세트의 완료 단계: `harness-plan`(계획) → `harness-run`(실행) → **`harness-done`**. 셋은 한 세트다 — 함께 배포·토글한다.
->
-> **기계장치는 한 곳** — 커맨드의 `$HARNESS_SCRIPTS` 해석:
+> 3종 세트: `harness-plan` → `harness-run` → **`harness-done`**. 기계장치 경로·세션 초점:
 > ```bash
 > HARNESS_SCRIPTS="$HOME/.codex/skills/harness-run/scripts"
 > [ -d "$HARNESS_SCRIPTS" ] || HARNESS_SCRIPTS="$HOME/.claude/skills/harness-run/scripts"
+> HARNESS_ROOT="$(python "$HARNESS_SCRIPTS/harness_focus.py" resolve)"
 > ```
+> 의식은 줄여도 **검증 실행은 줄이지 않는다** — DoD 검증과 실표면 스모크는 실제로 돌린다.
 
-## Milestone 완료 hook (완료 경계 순서)
+## 완료 경계 순서
 
-**검증 *실행*은 다이어트 대상이 아니다** — 의식은 줄여도 DoD 검증과 실표면 스모크는 실제로 돌린다(/harness-run 소유).
+1. **DoD 확인 + 스위트** — milestone DoD 를 evidence 경로로 충족 확인(게이트 전부 PASS). 그 자리에서 1문: 계획·결정 로그 대비 벗어남(확장·누락)이 없나. 이어서 **2단계 리뷰를 먼저 받고, 지적 반영 커밋을 다 모은 뒤 스위트를 한 번 돌린다** — 리뷰를 기다리며 스위트를 같이 돌리면 지적을 코드로 반영하는 순간 그 실행이 무효가 되어 한 번 더 돈다(2026-11-19 M30 사용자 결정 — a-private-repo 한 마감에 3~4회 실측). 리뷰가 생략되는 마감(소스 변경 없음·교차 레포·Codex)은 바로 스위트를 돌린다. 레포의 push 훅이 같은 커밋의 통과 기록을 이미 남겼으면 `--check` 가 덮으므로 다시 돌리지 않는다.
+   - **스위트**: `python <이 스킬 Base directory>/bin/suite_gate.py --root "$HARNESS_ROOT"`. 레포 테스트를 자동 감지해 실제로 돌리고 `.harness/suite-gate.json` 에 HEAD·exit code 를 남긴다. 레포의 정식 명령이 따로 있으면 `--command "<명령>"`. 실패면 고치고 커밋한 뒤 다시 돌린다 — 기록은 커밋에 묶여 있고, 그 뒤 커밋이 `plans/`·`archive/plans/`·`changesets/`·`archive/reports/`·`docs/reports/`·`ROADMAP.md`·`HANDOFF.md`·`docs/BACKLOG.md`·`.harness/work.json`·`.harness/execution-ledger.jsonl` 만 바꿨으면 그대로 덮는다(재실행 불필요). 그 밖의 파일이 바뀌면 재실행이 필요하다. 플레이키나 남의 변경으로 빨간 경우만 `--waive "<사유>"` 를 쓰고 노트 §3 에 `스위트: waived — <사유>` 를 적는다. 몇 분 넘게 걸리는 스위트는 백그라운드로 돌린다. 제한 시간은 기본 3600초, `--timeout <초>`(또는 env `SUITE_GATE_TIMEOUT`)로 조정하고, 실패·시간 초과 시 끝 80줄이 출력된다. 성공도 포함한 전체 로그는 실행 중부터 `.harness/suite-gate.log` 에 남으며, 기록에 시작·완료 시각과 경과 시간이 포함된다. pytest는 `--command "python -m pytest -vv --durations=20"`처럼 현재 테스트와 시간을 보이게 한다. 실행 중 HEAD를 바꾸지 않는다. 제한 시간을 넘기면 마지막 테스트를 분석하고 분할하며, 원인 확인 없이 같은 전체 명령 재시작·제한 시간 증가는 하지 않는다.
+   - **통과 뒤 생긴 커밋(리뷰·감사 반영)이 위 기록 파일 경로만 바꿨으면 스위트를 다시 돌리지 않는다. 그 밖의 파일을 바꿨으면 다시 돌린다.** 반영을 다 모은 뒤 한 번 돌리면 된다. 덮는지는 `python <이 스킬 Base directory>/bin/suite_gate.py --root "$HARNESS_ROOT" --check` 로 확인한다(실행 없이 판정만, 덮으면 exit 0).
+   - **스위트 명령이 괄호 묶음**(`(cd a && …) && (cd b && …)` 같은 POSIX 복합 명령)이면 `--command "<명령>" --shell bash` 로 돌린다 — Windows 기본 셸에서는 실패한다.
+   - **pre-push 훅 계약**: 레포의 push 훅이 같은 스위트를 돌린다면, 훅에서 `suite_gate.py --root <레포> --check --strict-clean --head <push 되는 sha> --base <원격 sha> --command "<훅이 돌리는 명령>"` 을 불러 exit 0 이면 건너뛴다. `--base` 는 훅 stdin 의 원격 sha 다 — 원격에 이미 있는 커밋 뒤로 기록 파일만 바뀐 push(다른 세션의 HANDOFF 한 줄 등)는 스위트 기록 없이도 덮는다(새 브랜치의 0 sha 는 그대로 넘겨도 된다 — 스크립트가 거르고 기록 판정으로 넘어간다). 기록 당시 추적 파일에 미커밋 변경이 있었으면(`--strict-clean`) 건너뛰지 않는다. `--command` 는 스위트를 돌릴 때 준 명령과 글자까지 같아야 한다. 훅이 전수 실행을 해야 할 때는 `suite_gate.py --root <레포> --command "<명령>" --stream` 으로 돌려 통과 기록을 남긴다 — 바로 뒤 마감 스위트와 다음 push 가 그 기록으로 건너뛴다.
+2. **코드 리뷰 — 내장 한 자리.** 소스 변경(코드·스크립트·훅·스킬 절차 파일)이 있고 **소스가 세션 레포 안**이면 `/code-review medium <milestone 시작 직전 커밋>..HEAD`(강도는 **medium 고정** — high 를 쓰지 않는다, 2026-11-17 사용자 결정) 에 계획서 경로와 사용자 합격선 한 줄, 그리고 **「테스트 품질도 본다 — 계획서 `Verify` 의 단언이 테스트에 실제로 있는가, 구현을 그대로 베낀 단언(실제 동작을 정답으로 적은 것)·경계값 누락·약화된 기존 테스트가 있는가」** 를 붙여 돌린다(2026-10-13). 계획서에 `테스트 없음` leaf 가 있으면 그 사유가 맞는지도 리뷰 대상이다. 계획서 `마감 감사:` 가 **`안 함`일 때만** 프롬프트에 **명세 축 세 질문**도 붙인다 — `함`이면 감사자의 `완료`·`정합` 축이 같은 것을 보므로 빼서 리뷰를 정확성에 집중시킨다(2026-11-16 사용자 결정, ADR 0039. 질문은 2026-10-14 mattpocock 대조 흡수 — 정확성 축과 섞지 말고 따로 답하게 한다): ① 계획서 leaf `Artifact` 가 요구한 것 중 **빠졌거나 반만 된 것** ② 계획서가 **요청하지 않은 변경**(인접 리팩터·추가 기능·범위 밖 파일) ③ 구현된 것처럼 보이지만 **동작이 틀린 것**. 지적 처분은 완료 노트 `리뷰:` 줄에 축별로 적는다. 소스가 세션 레포 밖이면 내장은 구조적으로 못 보므로 **생략하고 4단계 감사자의 `교차` 축이 받는다**(노트에 `리뷰: none — 교차 레포` + 사유). 소스 변경이 없으면 생략.
+   - **지적은 판결이 아니라 주장이다.** 리뷰어는 대화를 못 봤다 — 반영 전에 지적마다 계획서 결정 로그·사용자 합격선·레포 실물과 대조하고, 어긋나는 지적은 **기각 + 이유 한 줄**(노트 `리뷰:` 에). 기각은 정상 처분이다(경위 `references/rationale.md`).
+   - **맞다고 확인된 지적은 전부 마감 전에 고친다** (2026-11-17 사용자 결정 — 넘기면 계속 밀리고 안 한 것이 남는다). 처분은 `반영`·`기각` 둘뿐이다 — 노트 §2·finding 큐·다음 milestone 으로 이월하지 않는다. 대조해서 틀린 지적만 기각한다. 마감 감사(4단계) 지적도 같다. `--fix` 자동 적용은 기본이 아니다.
+   - 경계·소관 정본 `the-orchestration-repo/docs/adr/0033-closing-audit-seat.md`(자리 재획정) + `0031-three-verification-seats.md`(0015 가 안 바꾼 것).
+3. **완료 노트** — 리뷰 반영 커밋과 스위트 재실행이 끝나 **HEAD 가 멈춘 뒤** 쓴다. 실행 중 적은 Ruling 이 있으면 §1 「결과」 끝에 `Ruling:` 목록으로 그대로 옮긴다(사용자가 여기서 뒤집는다 — 뒤집히면 그 step 은 재실행 대상). **이 스킬 디렉터리의 `templates/REPORT_TEMPLATE.md`**(스킬 로드 시 표시되는 Base directory 아래) 3섹션(결과 / 이슈와 해결 / 증거)으로 `archive/reports/<date>-<id>-<slug>.md`. **짧게** — 논거·경위는 changeset·커밋에 있다.
+   - **§3 의 기계 사실은 손으로 쓰지 않는다** (2026-11-16 — 30일 감사 막는 지적 225건 중 141건이 노트 수기 오류였다). 커밋 범위·HEAD·커밋 수·트리 상태·스위트 기록·changeset 추적·완료 step `Files` 의 git 추적은 `python <이 스킬 Base directory>/bin/report_evidence.py --root "$HARNESS_ROOT" --base <milestone 시작 직전 커밋> --plan <계획서> --changeset <경로>… --write <노트>` 가 §3 표식 사이에 쓴다. exit 1 이면 블록의 경고(미커밋·스위트 미통과·추적 안 된 산출물)를 고치고 다시 돌린다. 커밋이 더 생기면 다시 돌린다 — `report_close` 가 블록 HEAD 를 현재 HEAD 와 대조해 거부한다.
+   - 모델이 쓰는 §3 줄은 판단뿐이다: `검증:`(돌린 커맨드와 관측) · `실표면:` · `재현:`(레포 안 명령 — scratchpad 금지) · `리뷰:` · `감사:`(4단계 뒤) · 있으면 `구현됨·미검증:`·`스위트: waived — <사유>`·`수확:`(kg 후보 ≤2, 선택).
+   - **노트를 쓰며 세 가지를 맞춘다** (2026-11-13 다섯 가지 중 트리·숫자는 블록이 맡는다):
+     1. **게이트가 덮은 만큼만 주장한다** — 「전부 된다」고 쓰기 전에 그 게이트가 실제로 돈 입력(실물·fixture·일부·수동)을 본다. 6종 중 1종만 돌렸으면 1종이라고 쓴다. 돌리지 않은 검증은 `구현됨·미검증:` 에. 블록 밖에 적는 수치는 방금 본 출력만.
+     2. **못 채운 DoD 는 잔여로 적는 것만으로 닫히지 않는다** — 계획서 진행 로그에 Ruling 으로 DoD 를 바꿨거나, 받을 milestone 의 ROADMAP 블록에 그 항목을 넣은 뒤에만 §2 에 적는다. 사용자 확인이 DoD 면 받은 원문이 있어야 충족이다. 계획의 결정·제약에서 벗어난 것도 Ruling 이 있어야 한다.
+     3. **레포의 마감 기록을 채운다** — changeset README 의 Status·Result·Evidence 를 채우고 커밋한 뒤 블록을 생성한다. 레포에 `changesets/README.md` 인덱스가 있으면 그 행도 완료로.
+4. **마감 감사 — `Agent(subagent_type="closing-auditor")`**(`model` 인자 없음). **노트가 쓰인 뒤·닫기 전**이 이 자리다 — 노트의 주장을 보려면 노트가 있어야 한다. **스폰 여부는 계획서가 정한다** (2026-11-16 사용자 결정): 계획서 `run 전 scope 결정` 의 `마감 감사:` 줄이 `함` 이면 스폰, `안 함` 이면 스폰하지 않고 `감사: none — 계획 결정`. 이 줄은 `/harness-plan` 승인 제시에서 사용자가 고른 값이다(연쇄 계획서는 아래 조건으로 끝난 세션이 적는다). 줄이 없는 옛 계획서만 조건으로 판정한다 — 장치 신설·개명 · 교차 레포 · `Risk: 위험` leaf ≥1 · 게이트/DoD 에 `평가 못 함` 중 하나라도 참이면 스폰(구 「step ≥3」은 거의 항상 참이라 폐지). 사용자가 「감사 생략」이라 하면 언제든 스폰하지 않고 `감사: none — 사용자 생략`.
+   - 넘기는 것 5개: 소스 레포 경로(교차면 레포·범위 쌍 전부) · 커밋 범위 · 계획서 경로 · **완료 노트 경로** · 사용자 합격선 한 줄. 하나라도 빠지면 감사자가 그 축을 `미확인` 으로 돌려준다.
+   - 축 5개(`완료`·`규약`·`정합`·`배선`·`교차`)와 각 축의 사정거리는 `the-orchestration-repo/docs/adr/0033-closing-audit-seat.md` §2 가 소유한다 — 여기 옮겨 적지 않는다.
+   - **지적 처분은 2단계와 같다** — 대조 후 기각은 정상. 다만 `완료` 축의 막는 지적은 대개 **노트를 고쳐서** 닫는다(아직 `report_close` 전이라 수정이 정상 경로다). 반영으로 커밋이 생기면 스위트 → `report_evidence.py --write` 를 다시 돌린다.
+   - 결과를 노트 §3 `감사:` 줄에 적는다. 안 돌렸으면 `감사: none — <계획 결정 | 조건 미해당 | 사용자 생략>`.
+   - 이 milestone 이 명령·필드·파일·스킬을 은퇴시켰으면 `python ~/.claude/skills/harness-done/bin/retire_check.py "<옛 이름>"…` 가 잔존 0 이어야 마감한다 — 잔존이 있으면 고치거나 남길 이유를 완료 노트에 적는다.
+5. **닫기 + ROADMAP — 한 명령** (2026-11-16): `python <이 스킬 Base directory>/bin/close_milestone.py --root "$HARNESS_ROOT" --report <노트> --task-id <id> --milestone <ID> --summary "<사용자용 한 문장>" --plan <계획서>`. `report_close` → `roadmap_sync complete` → 계획서 `archive/plans/` 이동 → `repair-plan-pointers` → ROADMAP 이 150줄을 넘을 때만 `compact` 를 차례로 부르고, 실패하면 그 단계에서 멈춰 이름을 찍는다(고치고 같은 명령을 다시 — 끝난 단계는 건너뛴다). 그 뒤 스크립트가 끝에 찍은 `git add`·`git commit` 명령을 그대로 실행하고 push 한다 — 경로를 손으로 다시 적지 않는다(없는 옛 `plans/` 경로·gitignore 된 경로가 섞이면 add 가 통째로 실패한다). changeset 처럼 스크립트가 모르는 파일만 그 명령에 덧붙인다.
+   - `report_close` 가 거부하는 것: 빈 노트·`실표면:`/`재현:`/`감사:` 누락, 스위트 기록 없음·기록 파일 밖이 바뀐 커밋 뒤의 기록(다른 커밋의 기록)·실패 상태, §3 자동 블록 없음·다른 커밋 기준. 평가 못 한 검사는 `평가 못 함: <왜>` 로 표면화한다 — 통과가 아니다. ⚠ DoD 를 재실행하지 않는다 — 검증은 1단계와 `/harness-run` 이 한 것이다. 스위트 기록·자동 블록은 HEAD 만 대조하므로 미커밋 수정은 잡지 못한다.
+6. **연쇄** — `python "$HARNESS_SCRIPTS/harness_work_state.py" next-chained --root "$HARNESS_ROOT" --json`. exit 1 = 목표 끝, 멈춘다. `unapproved_candidates` 는 초안이다 — 자동 승인 금지, `/harness-plan` 으로. exit 0(`ready` — 계획서·승인 이력 있음)·exit 3(`needs-plan` — 목표 chain 멤버인데 계획서 없음)이면 **이 세션이 다음 milestone 을 넘긴다**(2026-10-26 사용자 확정, ADR 0037). 목표 승인이 곧 실행 승인이다 — 사용자에게 묻지 않는다. 각 단계 결과를 한 줄씩 출력한다.
+   1. **계획서**(exit 3 일 때) — 방금 닫은 milestone 의 완료 노트·Ruling·finding 큐와 출력된 DoD 를 재료로 `/harness-plan` §3~§4 규약대로 다음 계획서를 쓴다(인터뷰 없음). `## 의도 원문` 은 목표를 승인한 계획서의 것을 그대로 옮기고, milestone 절 `- **목표**:` 에 `chained-from <방금 닫은 work-id>`. 목표 범위 안에서 쪼개거나 합쳤으면 Ruling 으로 적는다. 계획서에서 사용자 몫(도메인·행동·취향·범위)인데 근거로 정할 수 없는 결정은 결정 로그에 `사용자 몫 미결` 로 적는다. 연쇄 계획서에는 plan-verifier 를 붙이지 않는다(2026-11-16 사용자 결정 — `## 검증자 지적 처분` 은 `none — 연쇄 계획`). `run 전 scope 결정` 의 `마감 감사:` 는 4단계 조건(장치 신설·개명 · 교차 레포 · `Risk: 위험` leaf ≥1)으로 `함`/`안 함` 을 적는다.
+   2. **게이트** — `validate_plan_gate.py <plan> --pre-approval` PASS.
+   3. **경계 결정** — 결정 로그에 `사용자 몫 미결` 이 남았으면 **모아서 한 번에** 묻고 멈춘다(AskUserQuestion 한 번). 답을 받으면 표식을 확정값으로 바꾸고 이어간다. milestone 안 실행 중 결정은 여기가 아니라 `/harness-run` 의 Ruling 소관이다.
+   4. **승인** — `Status: approved (chain:<방금 닫은 work-id>)` 로 바꾸고 `approve_harness_plan.py <plan> --root "$HARNESS_ROOT" --work-id <새 id> --milestone-id <id> --changeset-path <path> --session-id <token> --chained-from <방금 닫은 work-id>` → ROADMAP 마커 `active` → `docs(plan): <제목> 계획 연쇄 승인` 단독 커밋·push. 거부(chain 밖·미결 남음)면 멈추고 보고.
+   5. **넘기기** — 전달물 본문을 scratchpad 파일로 쓴다: 계획서 경로 · work-id · 이 세션이 닫은 milestone 의 완료 노트 경로와 Ruling · 목표 chain 의 남은 id · 첫 지시(「`/harness-run` 으로 이 계획을 실행한다. 착수 점검 → started → close-old 는 `/harness-run` 진입 절을 따른다」). 발사는 여기서 하지 않는다 — 6 의 `/session-end --relay` 가 HANDOFF 를 올린 뒤에 한다.
+   6. **넘기고 마감** — 같은 턴에 `/session-end --relay`(약식 — 데이터 레포 push·HANDOFF 병합·커밋·push 뒤 발사, 2026-11-16·18)를 돌린다. 발사 명령으로 `python "$HARNESS_SCRIPTS/chain_handoff.py" launch --root "$HARNESS_ROOT" --work-id <새 id> --packet-file <파일> --model <계획서 실행 모델> --runtime <현재 런타임>` 을 넘긴다. 발사가 exit 0 이면 마지막에 `python "$HARNESS_SCRIPTS/chain_handoff.py" ended --root "$HARNESS_ROOT" --work-id <새 id>`. 이 탭은 새 세션이 닫는다 — 스스로 닫지 않는다. exit 4(재발사 후에도 착수 신호 없음)면 `ended` 를 기록하지 않고, 이 세션을 열어 둔 채 사용자에게 한 줄 보고하고 멈춘다(HANDOFF 는 이미 올라가 있다).
+   - exit 0(`ready`)이면 1~3 을 건너뛰고 4(이미 승인돼 있으면 4 도 건너뜀)부터.
+   - exit 1(목표 끝)이면 멈춘다. 약식 `--relay` 가 건너뛴 문서 위생·CLAUDE.md 점검은 이 세션이 끝날 때의 `/session-end` 끝내기 모드가 레포 전체로 한다.
 
-1. milestone `DoD` 를 evidence path 로 충족 확인 (관련 gate 전부 PASS).
-   - **완료 감사 2문 (2026-07-31 kit 이식)**, DoD 확인 자리에서: ① **드리프트** — 계획·결정 로그 대비 벗어남(확장·누락 양방향) 없나 ② **순조로움 의심** — 무마찰 구간 하나 재검증(무마찰은 검증 부재 신호일 수 있다). **증거로 게이트를 인용했으면 그중 이번 변경을 가장 직접 겨냥한 하나를 재검증 대상에 반드시 포함한다** (M25 2026-08-22 — 무마찰 구간 하나로 갈음하면 인용한 게이트가 정말 이번 변경을 덮었는지는 끝까지 안 본다. 게이트 PASS 의 사정거리가 주장의 사정거리에 못 미치는 실패가 반복 관측됐다 — kg `gate-pass-scope-must-cover-the-claim`). 발견은 보고서 §이슈에, 실재하면 완료 전 수습 또는 partial.
-2. **코드 리뷰 1회 — 이 milestone 이 만든 소스 변경을 대상으로.** `/code-review` 를 부른다(새 정의를 만들지 않고 기존 표면을 쓴다). 배치·주체·강제의 근거는 `the-orchestration-repo/docs/agent-os/research/2026-08-17-verifier-role-necessity.md` §2-5 가 소유한다 — 여기 옮겨 적지 않는다.
-   - **대상 범위를 인자로 묶는다**: `/code-review <milestone 시작 직전 커밋>..HEAD`. 승인 커밋이 milestone 의 시작점이므로 그 부모가 base 다. 범위를 안 주면 리뷰가 번져 비용이 몇 배로 샌다(외부 실측).
-   - **소스 변경이 없으면 생략한다.** 소스 = 코드·스크립트·훅·스킬 절차 파일. 산문 문서·마커만 바뀐 milestone 은 빈 리뷰가 되므로 부르지 않는다.
-   - **Codex 런타임에는 대응 커맨드가 없다** — 건너뛴다. 배포본은 두 런타임에 같은 파일로 나가므로 이 분기가 필요하다.
-   - **milestone 소스가 세션 레포 밖에 살면 이 호출은 성립하지 않는다.** 빌트인 `/code-review` 는 현재 세션 레포 컨텍스트 한정으로 동작한다(공식 문서에 교차 레포 언급 없음 · M18 실측 2026-08-22: 타 레포 범위 인자 2회 모두 본문 없는 즉시 반환). 그 리뷰는 소스 레포에서 여는 세션 몫으로 넘기고 여기서는 생략한다.
-   - 발견의 처분은 사람 게이트다. 고칠 것은 완료 전에 수습하고, 남길 것은 보고서 §이슈나 finding 큐로 넘긴다. `--fix` 자동 적용은 기본이 아니다.
-   - **훅으로 강제하지 않는다.** 리뷰 판정은 비결정론적이라 게이트로 만들면 오탐이 정당한 마감을 막고 규약이 우회된다(KG `deterministic-verification-gate-design-checklist`). 지켜졌는지는 아래 보고서의 `리뷰:` 줄로만 확인한다.
-3. **완료 노트 = 완료 의식의 정본.** `templates/REPORT_TEMPLATE.md` **3섹션**(결과 / 이슈와 해결 / 증거)으로 `archive/reports/<date>-<id>-<slug>.md` 를 쓴다. **짧게 쓴다** — 설계 논거·경위는 changeset 과 커밋 메시지에 있고 여기 옮기지 않는다(CF6 2026-07-22: 구 7섹션 중 4개는 아무도 안 읽었다). §3 에 크기 회고·검증 관측을 적되 **`실표면:`**(사용자가 만지는 표면을 실제로 두드린 결과, 없으면 `none — <이유>`)·**`재현:`** 줄은 필수다. **`리뷰:`** 줄도 규약으로 남긴다(스크립트가 거부하지는 않는다) — 호출 인자와 지적 건수·처분, 또는 `리뷰: none — 소스 변경 없음` · `리뷰: none — 런타임 미지원(codex)` · `리뷰: none — 교차 레포 미지원(소스=<레포>, 그 레포 세션 몫)`. 이번 milestone 이 장치(스크립트·훅·명령)를 **신설**했으면 **`배선:`**(누가 언제 호출하나 + 실발화 1회 증거) 줄도 필수 — 만들었다≠호출된다(M10, kg mechanism-wiring-completion-rule. 실측: rotate 13일 미배선). 신설 장치 없으면 `배선: none — 장치 신설 없음`. **`수확:`**(kg 승격 후보 — 아래 인입 불릿의 3기준을 통과한 것만, 최대 2건) 줄도 필수다. 후보 0건이 정상 기본값이므로 `수확: 없음` 또는 `수확: 없음 — <이유>` 로 적는다 — **줄 자체가 없으면 스크립트가 거부한다**(M6 2026-08-20: 비강제 규약이던 시절 빠뜨림이 관측되지 않았다).
-4. `python "$HARNESS_SCRIPTS/report_close.py" <report> --task-id <id> --root . --summary "<사용자용 한 문장>"` — ledger 파생·completion_summary·work `completed` 전환까지 1커맨드. 빈 보고서나 `실표면:`/`재현:`/`수확:` 누락은 스크립트가 거부한다. **평가 못 한 검사는 통과가 아니다 (2026-07-23 OI3)** — 증거에 "측정 불가·확인 못 함" 류가 있으면 `평가 못 함: <무엇을 왜 못 쟀나>` 줄로 표면화해야 닫힌다. `실표면:` 이 부작용("에러가 안 났다"·"파일이 생겼다")으로 통과를 주장해도 거부한다 — assertion 이 실제로 평가돼 성공을 보고했을 때만 통과다. **보고서 경로가 gitignore 로 추적 불가여도 거부한다**(로컬 유실 방지, 2026-07-23) — 이때는 `fix_report_durability.py --root . --apply` 로 예외를 넣고 다시 닫는다. `.harness/` 없는 레포는 보고서만 남긴다.
-   > **이 커맨드가 하지 않는 일** (2026-08-06 외부 감사 #3): DoD 를 **재실행하지 않는다.** 보고서 산문을 읽어 형식을 검사할 뿐이고, 파생되는 `adversarial_verify` 이벤트의 `verdict: confirmed` 는 하드코딩 상수다 — 원장에 적힌 검증은 *이 스크립트가 수행한 것이 아니라* 보고서가 주장한 것을 옮긴 것이다. 검증을 실제로 돌리는 것은 1단계와 `/harness-run` 이고, 이 게이트가 막는 것은 **조용히 통과하는 것**뿐이다. 원장을 나중에 증거로 읽을 때 이 차이를 잊지 말 것.
-5. `roadmap_sync.py complete` → `compact --max-lines 150` → `gap-check`(active milestone 0 이면 gap 요약 — 구명 horizon-check 삭제 2026-07-24).
-   > **`complete` 는 블록을 `## Completed` 로 옮기기까지 한다** (M5 2026-08-20). 닫는 순간이 옮길 시점이라 별도 명령을 부르지 않아도 된다. 대상 섹션이 없으면 마지막 진행 섹션 뒤에 만들고, 섹션 **끝**에 붙이므로 `compact` 가 오래된 것부터 걷어내는 순서는 그대로다. 마커를 지우거나 BACKLOG 에 쓰지 않는다 — 그건 `compact` 의 다른 처분이다. **이미 닫혀 진행 섹션에 남아 있는 것들**(플릿 실측 32 레포 165건)은 `roadmap_sync.py relocate [--dry-run]` 이 소급 진입점이다.
-6. **`python ~/.codex/hooks/harness_work_state.py next-chained --root .` — 승인 이력 있는 다음 milestone 이 남았으면 그 자리에서 이어간다** (marker active + approve 등록 = 승인의 *집행*). exit 1 이면 멈춘다. 후보 = 계획서 + 승인 이력(영수증 또는 `--chain`, FA1). `미승인 후보` 출력은 초안 — 자동 승인 금지, `/harness-plan` 으로.
-   > 왜 단계인가: Stop hook 도 이 판정을 하지만 `stop_hook_active`(무한루프 방지) 탓에 **milestone 을 최대 한 개만 더 밀어준다**(2026-07-23 실측: 5연쇄가 OI2→OI3 에서 정지). **연쇄를 훅 발화 횟수에 의존시키지 않는다** — 완료 절차가 직접 묻는다.
+**high-risk**(보안·결제·마이그레이션·대규모 diff·배포면)만 spec/quality 2축 + near-miss 기록으로 `ledger_append.py close` 경로를 탄다. 이 경로에는 스위트 대조가 없으니 `suite_gate.py` 결과를 직접 확인하고 닫는다.
 
-- **kg 승격 후보 인입 (2026-07-31 사용자 결정)**: 완료 보고서 §이슈와 해결·finding 큐에서 ① 레포 밖에서도 유효하고(일반성) ② 다음에 시간을 아껴줄 검증된 규칙·패턴이며(재사용성) ③ 출처(재현 명령·URL·실측 커밋)를 한 줄로 적을 수 있는 것만 골라, kg 스킬 Add / Intake Workflow 정본 절차로 넣는다(discover 중복 확인 → 분류 → 노드 생성 → validate, 기본 `status: draft` — active 승격은 draft-review 게이트만). **후보 0건이 정상 기본값**, milestone 당 최대 2건. **판정 결과를 적는 자리는 보고서 §3 의 `수확:` 줄 하나다**(위 3단계) — 그 줄이 없으면 `report_close.py` 가 거부한다. 여기서 판정 기준을 다시 정하지 않는다.
-- 완료된 계획서는 `archive/plans/` 로 이동한다(record 동결 — 옛 백링크는 정정하지 않는다).
-- 보고서 제시는 **md 정본 경로 + 본문 요약**. Artifact 렌더 안 한다.
-- **`active_work_id` 는 비우지 않는다** — Stop hook 완료 알림이 이 포인터를 읽는다(다음 approve 가 자연 갱신).
-- **예외(high-risk — 보안·결제·마이그레이션·대규모 diff·배포면)**: spec/quality 2축 + near-miss 기록이 필요해 `ledger_append.py close` 경로를 유지. (구 `/harness` 승계 — 3분할 2026-07-24 이월. 2026-08-15 M20 감사: high-risk milestone 미발생으로 실발화 0 — 기회 부재이므로 유지)
-- 크기 회고: milestone 이 changeset 1개로 닫혔으면 그건 step 이었다 — 보고서에 라벨 정합 적발 한 줄. 목표가 남았는데 연쇄 없는 1-milestone 승인으로 끝난 계획은 **과소 그릇 신호**로 한 줄 추가 — 목표 자체가 그 크기였다면 해당 없음(2026-07-31 목표 단위 계획 규약).
+**크기 회고 한 줄** — milestone 이 changeset 1개로 닫혔으면 그건 step 이었다. 노트에 적는다.
 
-## ROADMAP lifecycle (상위 status machine)
+## 펼친 계획 — 갈래 마감과 메인 통합 마감 (2026-11-18 M26)
 
-`ROADMAP.md` 는 **milestone 상태만 관리하는 상위 장부**다 — 진행의 쓰기 정본은 plan doc 체크박스이고 이건 거기서 파생된다. `docs/BACKLOG.md`(구 레포는 루트 `BACKLOG.md`)는 완료·보류·아카이브된 milestone 의 압축 이력 저장소다.
+**갈래 마감** — 전달물 `.harness/fanout/branch.json` 이 있는 워크트리의 세션. 완료 경계 순서 1~4(DoD·스위트·코드 리뷰·완료 노트·계획서가 정했으면 감사)는 그대로 하고, 5·6 대신:
+- 닫기 = `python <이 스킬 Base directory>/bin/close_milestone.py --root <갈래 워크트리> --report <노트> --task-id <갈래 work-id> --milestone <ID> --summary "<한 문장>" --branch`. `report_close` 만 돌고 ROADMAP·계획서 이동·compact 는 건너뛴다. 갈래 워크트리에서 `--branch` 없이 부르면, 전달물 없는 체크아웃에서 `--branch` 로 부르면 거부된다.
+- 노트·계획서 체크박스를 커밋하고(`.harness/` 는 레포가 추적해도 커밋하지 않는다 — `harvest_worktree.py` 가 흡수를 거부한다) 갈래 브랜치를 push 한 뒤, 스크립트가 끝에 찍은 `fanout.py ready --root <갈래 워크트리> --note <노트>` 를 실행한다 — 완료 노트 실재·작업 트리 깨끗·push 됨을 확인하고 READY 를 쓴다(아니면 exit 1). 이것이 「병합 대기」 선언이고, 선언 뒤 갈래는 멈춘다. 병합·ROADMAP·HANDOFF 는 메인 몫이다. 연쇄(6)는 돌리지 않는다.
+- 갈래를 접는 것은 그 탭에서 사용자가 `/harness-done drop` 을 명시할 때뿐이다 — 중단 노트·`report_close --drop` 까지만 하고 ROADMAP 은 건드리지 않는다. 메인에 알리려면 `fanout.py request --body "drop: <사유>"`.
 
-역할 분담과 **문서 수명(living vs record)** 의 정본은 `/harness-plan` 배치 규약 표다. 핵심: `ROADMAP.md`=상태판(150줄 이하) · 계획서=계획 · 기록(record)은 완료 경계에 동결하고 **정정은 수정이 아니라 새 기록 추가** · 살아있는 문서의 stale 화가 기록화보다 나쁘다(발견 즉시 갱신).
+**메인 통합 마감** — 등록부의 모든 갈래가 `absorbed`·`dropped` 일 때(`fanout.py status`). 메인 계획서의 통합 검증을 돌리고 완료 경계 순서 1~6 을 평소대로 한다. 완료 노트 §1 에 갈래마다 결과(병합 커밋·갈래 완료 노트 경로·dropped 사유)를 적는다 — 갈래 승인 영수증(`approved_by: fanout:…`)은 흡수 때 등록부 항목 `receipts` 로 옮겨져 있다. 병합으로 `plans/` 에 들어온 갈래 계획서는 같은 마감 커밋 전에 `git mv` 로 `archive/plans/` 에 옮긴다(갈래 마감은 계획서를 옮기지 않는다). 코드 리뷰 범위는 메인 milestone 시작 직전 커밋..HEAD(갈래 병합 포함)다.
 
-**`ROADMAP.md` 표준 marker 형식** — `harness:goal` 줄(북극성 한 줄 요약) + `harness:milestone` block(`DoD`·`Evidence`·`Gap`·`Status: [ ]` 필수, 선택 `Plan`). **형식 정본은 부트스트랩이 실제로 찍는 것**: 번들 `init-ai-readiness.sh` 의 ROADMAP 스켈레톤. ⚠ **태그명과 필드 키워드를 바꾸지 않는다** — 이 마커를 파싱하는 도구는 이름이 바뀌면 예외 없이 조용히 빈 결과를 낸다.
+## 중단 종결 — 외부 결과로 접을 때 (2026-11-03 M24)
 
-규칙:
-- `DoD` 와 `Evidence` 없는 milestone 은 자동 완료 처리 금지. checkbox 만으로 완료 판단하지 않는다.
-- `blocked`/`error` 는 완료 처리 금지. 필요하면 해당 milestone block 에 `- Blocked by: ...` 를 남기고 멈춘다.
-- 작업 중 step 진행률은 plan doc 체크박스에 기록하고, `ROADMAP.md` 는 milestone boundary 에서만 갱신한다.
-- **계획 문서 사슬 — 2계층:** `CLAUDE.md` 「북극성」 절 → `plans/<date>-<milestone-id>-<slug>.md` → step 체크박스 (위→아래 링크). horizon 문서 층은 2026-07-23 재조립 C4·C9 로 폐지됐고 `harness:goal` 줄은 북극성 한 줄 요약으로 남는다(마커 문법은 22개 레포 총괄 계약이라 불변). 진행 상태의 쓰기 정본은 **plan doc 의 step 체크박스**다 — ROADMAP·`work.json` 은 거기서 파생되는 포인터이고, 어긋나면 plan 이 이긴다. 계획서가 없는 레포는 ROADMAP 만으로도 동작(optional).
-- `ROADMAP.md` 는 150줄 이하를 유지한다. 초과 시 완료된 milestone 부터 `docs/BACKLOG.md` 로 3~5줄 압축 아카이브한다. active/pending milestone 은 자동 삭제 금지.
-- candidate 가 단일 컴포넌트/좁은 smoke 라면 milestone 으로 승격하지 말고 step 으로 남긴다. active 후보는 최소 2-5 steps 와 하나 이상의 통합 smoke 가 자연스러워야 한다.
+공모전 미선발·외부 일정 취소처럼 **바깥 결과로 milestone 을 접는** 경로다. 완료 경계 순서(1~6)를 타지 않는다 — 완료가 아니므로 DoD 확인·코드 리뷰·마감 감사는 없고, 「완료」로 기록되면 안 된다. 계획서·work-id 가 없는 milestone(ROADMAP 에만 있던 것)도 같은 흐름이다.
 
-공통 helper: `python "$HARNESS_SCRIPTS/roadmap_sync.py" status | complete --milestone <ID> --evidence <path> --summary "<한 줄>" | compact --max-lines 150 --backlog docs/BACKLOG.md | gap-check`(구 레포는 `--backlog BACKLOG.md` 명시).
+진입: 사용자가 `/harness-done drop <id>` 를 치거나 「이 milestone 접자」·「M1 중단하자」처럼 중단을 **명시**할 때만. 모델이 실패·지연을 보고 스스로 중단을 판정해 접지 않는다.
 
-## Milestone 연쇄 (기본)
+1. **중단 노트** — 이 스킬 디렉터리의 `templates/DROP_TEMPLATE.md` 로 `archive/reports/<date>-<id>-중단.md`. 세 절(중단 사유 · 동결 산출물 · 재개 조건)과 `근거:` 줄(외부 결과의 출처). 미커밋 변경·워크트리·브랜치는 **경로만 적고 손대지 않는다** — 정리는 사용자 별도 지시.
+2. **기록** — `python "$HARNESS_SCRIPTS/report_close.py" <노트> --task-id <work-id 또는 milestone-id> --root "$HARNESS_ROOT" --drop [--milestone-id <id>]`. ledger 에 `task_dropped` 한 건만 남고, work 가 있으면 status `dropped`, 없으면 ledger 기록만.
+3. **ROADMAP** — `python "$HARNESS_SCRIPTS/roadmap_sync.py" drop --milestone <id> --evidence <노트> --reason "<한 줄>"` — 마커 `dropped` + 블록을 종결 섹션으로. 계획서가 있으면 `archive/plans/` 로 옮기고 `roadmap_sync.py repair-plan-pointers`.
+4. **연쇄 후속** — `python "$HARNESS_SCRIPTS/harness_work_state.py" chain-remaining --root "$HARNESS_ROOT" --milestone-id <id>`. `remaining` 이 비어 있지 않으면 목록을 보여주고 **함께 접을 것을 사용자가 고른다**(AskUserQuestion 한 번, 복수 선택). 고른 것마다 1~3 을 같은 사유로 반복한다. 안 고른 것은 그대로 두되 **자동 연쇄(`next-chained`)를 돌리지 않는다** — 다음 착수는 사용자 지시로.
+5. **커밋** — 노트·ROADMAP(·계획서 이동)을 `chore(roadmap): <id> dropped — <사유 한 줄>` 로 pathspec 커밋·push.
 
-(도입: 3분할 2026-07-24 이월 — 사용자 선호 확정 규약) 승인된 계획 안에서는 milestone 완료 boundary 에서 **멈추지 않고**, ROADMAP 의 다음 pending/Next Candidate(`DoD`·`Evidence`·`Gap` 완비 + 결정 로그상 새 사용자 결정 불요) 1개를 자동 승격해 연쇄 진행한다 — 사용자 선호: 계획은 단단히, 실행은 끊김 없이. **정지 조건**: ① 사용자 소유 결정·secret·risk gate 출현 ② blocked/error ③ 승격 가능 후보 없음 ④ 사용자가 "하나만"·"여기까지" 명시. **새 milestone 을 *작성*해야 하면** 여전히 정지 → `/harness-plan` 계획 작성. **연쇄 중 승격된 milestone 이 새 plan doc 을 펼치면, 정지 없이 진행하되 그 계획(산문 요약+step 트리+결정 로그)을 진행 보고에 반드시 제시한다 — 결정 로그에 새 사용자 결정이 있으면 제시가 아니라 정지.**
+재개는 같은 id 로 되살리지 않는다 — 다시 하면 `/harness-plan` 으로 새 milestone 을 열고 중단 노트를 링크한다.
 
-후보 소진(active 0 + 승격 가능 0)이면 멈춘다 — 새 방향은 `/harness-plan`.
+## ROADMAP 규칙
+
+`ROADMAP.md` 는 milestone 상태만 관리하는 상위 장부(≤150줄)이고, 진행의 쓰기 정본은 계획서 체크박스다. 마커 형식(`harness:goal` 줄 + `harness:milestone` 블록의 `DoD`·`Evidence`·`Gap`·`Status`)은 번들 `init-ai-readiness.sh` 가 찍는 것이 정본이고 `session-end/bin/roadmap_parse.py` 가 읽는다 — 태그명·필드 키워드를 바꾸지 않는다.
+
+- `DoD`·`Evidence` 없는 milestone 은 완료 처리하지 않는다. checkbox 만으로 완료 판단하지 않는다.
+- `blocked`/`error` 는 완료 처리하지 않는다 — `- Blocked by:` 를 남기고 멈춘다.
+- 150줄 초과 시 완료된 것부터 `docs/BACKLOG.md` 로 3~5줄 압축(`compact`). active/pending 은 자동 삭제 금지.
+- 단일 컴포넌트·좁은 smoke 는 milestone 이 아니라 step 이다.
+
+## Codex 에서
+
+내장 `/code-review` 가 없어 2단계를 건너뛴다(노트에 `리뷰: none — Codex 런타임`). 4단계 마감 감사자는 `~/.codex/agents/closing_auditor.toml` 로 스폰된다 — 조건·축은 동일하다. Codex 쪽 정리는 2026-09-21 이후 별도 세션 소관.

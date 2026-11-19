@@ -293,7 +293,9 @@ _ghost = validate(DISPATCH_GOOD.replace("- step-3 · worker(sonnet) · 격리 wo
 assert any("실재하지 않는 leaf" in e and "step-9" in e for e in _ghost), _ghost
 # probe 3 — 순차 의존 leaf 의 병렬 worker 선언 (step-3 이 step-2 에 의존하도록 변형)
 _seq = validate(DISPATCH_GOOD.replace("  - Dependencies: step-1\n  - Verify: pytest b", "  - Dependencies: step-2\n  - Verify: pytest b"))
-assert any("순차 의존" in e for e in _seq), _seq
+# 2026-09-30: 의존이 있으면 derive_waves 가 다른 wave 로 가르고 워커는 wave 단위로 순차 실행된다 → 정상.
+# 옛 기대(FAIL)는 worker 행 = 동시 실행이던 M18 의미. 같은 wave 안의 의존 쌍은 wave 파생 자체가 갈라 놓으므로 생기지 않는다.
+assert _seq == [], _seq
 # 문법 밖 행 (격리 누락) 지목
 _bad_row = validate(DISPATCH_GOOD.replace("- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a", "- step-2 · worker(sonnet) · 검증 pytest a"))
 assert any("문법 밖" in e for e in _bad_row), _bad_row
@@ -327,6 +329,49 @@ _unk = validate(_M23.replace("- step-2 · worker(sonnet)", "- step-2 · worker(g
 assert any("서열 미상" in e for e in _unk), _unk
 
 print("plan gate 배차 모델 상한 4건 PASS")
+
+# ── 2026-09-30: 동시 집합 ≥2 이면 배차 절 필수 + wave 커버리지 ───────────────
+_P30 = _M23.replace("> 생성: 2026-08-22", "> 생성: 2026-09-30").replace(
+    "- Rollback/cleanup: revert each narrow commit.\n",
+    "- Rollback/cleanup: revert each narrow commit.\n- 되돌리기 어려운 동작: 없음\n",
+)
+assert validate(_P30) == [], validate(_P30)  # 절 있음 + wave(step-2 step-3) worker 2 → PASS
+_no_section = _P30.split("## 배차 설계")[0] + "## 스캐폴딩 결정" + _P30.split("## 스캐폴딩 결정")[1]
+assert any("배차 설계` 절이 없다" in e for e in validate(_no_section)), validate(_no_section)
+# 발효일 전 생성이면 무검사(기존 계획 동결)
+_old = _no_section.replace("> 생성: 2026-09-30", "> 생성: 2026-09-29")
+assert validate(_old) == [], validate(_old)
+# wave 2 leaf 중 worker 1 → 부모 inline 1 허용이라 PASS · worker 0 → FAIL
+_one = _P30.replace("- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b", "- step-3 · inline · 격리 none · 검증 pytest b")
+assert validate(_one) == [], validate(_one)
+_zero = _one.replace("- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a", "- step-2 · inline · 격리 none · 검증 pytest a")
+assert any("worker 행이 0개" in e for e in validate(_zero)), validate(_zero)
+# 순차(step-3 이 step-2 의존)면 wave 가 전부 1개 → 절 없어도 PASS
+_seq30 = _no_section.replace("  - Dependencies: step-1\n  - Verify: pytest b", "  - Dependencies: step-2\n  - Verify: pytest b")
+assert validate(_seq30) == [], validate(_seq30)
+print("plan gate 배차 필수·wave 커버리지 5건 PASS")
+# 2026-11-07: 행에 effort·researcher 를 적을 수 있다
+_row2 = "- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a"
+_eff = _P30.replace(_row2, "- step-2 · worker(sonnet, high) · 격리 none · 검증 pytest a")
+assert validate(_eff) == [], validate(_eff)
+_bad_eff = _P30.replace(_row2, "- step-2 · worker(sonnet, turbo) · 격리 none · 검증 pytest a")
+assert any("effort 미상 turbo" in e for e in validate(_bad_eff)), validate(_bad_eff)
+_res = _P30.replace(_row2, "- step-2 · researcher · 격리 none · 검증 pytest a")
+assert validate(_res) == [], validate(_res)
+_res2 = _res.replace("- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b", "- step-3 · researcher · 격리 none · 검증 pytest b")
+assert validate(_res2) == [], validate(_res2)
+print("plan gate effort·researcher 행 4건 PASS")
+# 다른 wave 의 워커끼리는 순차가 정상 (2026-09-30 M40 첫 실전) — step-4 가 step-2·3 뒤 wave 에서 worker
+_w3 = _P30.replace(
+    "## 배차 설계",
+    "- [ ] **step-4 — after**\n  - Artifact: merged\n  - Risk: 기계적 (순수 추가)\n  - Files: scripts/d.py\n"
+    "  - Dependencies: step-2, step-3\n  - Verify: pytest d\n  - Failure probe: bad input fails\n  - Commit: one changeset\n## 배차 설계",
+).replace(
+    "- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b",
+    "- step-3 · worker(sonnet) · 격리 worktree · 검증 pytest b\n- step-4 · worker(sonnet) · 격리 none · 검증 pytest d",
+)
+assert validate(_w3) == [], validate(_w3)
+print("plan gate 다른 wave 워커 순차 허용 1건 PASS")
 
 
 # ── M6 step-2: --pre-approval 은 Status **값 판정** 하나만 면제한다 ────────────
@@ -563,3 +608,264 @@ TAIL_PROSE = TAIL_MODERN.replace("(2026-08-22 완료)", "완료했다")
 assert [m.group("id") for m in leaf_headings(TAIL_PROSE)] == ["step-2"]
 
 print("plan gate M24 leaf 꼬리말 5건 PASS")
+
+# ── 되돌리기 어려운 동작 선언 (2026-08-29 h-e M28 O2 — 생성일 게이팅) ──────────
+from validate_plan_gate import validate_destructive_declaration
+
+# 1) 발효일 이후 생성 + 선언 줄 없음 → FAIL
+NEW_PLAN = GOOD.replace("# Plan\n", "# Plan\n> 생성: 2026-08-29\n")
+assert any("되돌리기 어려운 동작" in item for item in validate(NEW_PLAN))
+# 2) 선언 줄(평문·굵게 둘 다)이 있으면 통과
+assert validate(NEW_PLAN.replace("## Step Tree", "- 되돌리기 어려운 동작: 없음\n## Step Tree")) == []
+assert validate(NEW_PLAN.replace("## Step Tree", "- **되돌리기 어려운 동작**: 라이브 배포 1건 — deploy_gate 정지\n## Step Tree")) == []
+# 3) 발효일 이전 생성 → 기록 동결, 검사 안 함
+OLD_PLAN = GOOD.replace("# Plan\n", "# Plan\n> 생성: 2026-08-28\n")
+assert not any("되돌리기 어려운 동작" in item for item in validate(OLD_PLAN))
+# 4) 생성일 줄 자체가 없는 구형 → 검사 안 함
+assert validate_destructive_declaration(GOOD) == []
+
+print("plan gate destructive 선언 4건 PASS")
+
+
+# ── 2026-09-21 절차 다이어트: Risk 없음 leaf 는 Failure probe 면제 ───────────────
+_STEP2_PROBE = "  - Failure probe: early stop fails\n"
+assert any("Failure probe" in item for item in validate(GOOD.replace(_STEP2_PROBE, "  - Risk: 기계적 (게이트 집합 변동)\n"))), "기계적 leaf 는 여전히 필수"
+assert not any("Failure probe" in item for item in validate(GOOD.replace(_STEP2_PROBE, "  - Risk: 없음 (기록만)\n"))), "없음 leaf 는 면제"
+
+
+# ── M34 D5: Verify 가 주장한 경로의 실재 검사 (--pre-approval 에서만) ─────────────
+from validate_plan_gate import validate_verify_targets, plan_repo_root, _verify_path_tokens
+
+_TMP = Path(__file__).resolve().parent
+
+
+def _verify(line_value: str, root: Path = _TMP, extra: str = "") -> list[str]:
+    text = f"- [ ] **step-1 — x**\n  - Files: {extra}\n  - Verify: {line_value}\n"
+    return validate_verify_targets(text, root)
+
+
+# 1) 부재 경로는 ERROR
+assert _verify("`pytest -q scripts/does_not_exist.py`"), "부재 경로를 놓쳤다"
+# 2) Files 에 선언했으면 통과 — 이 step 이 만드는 파일이다
+assert _verify("`pytest -q scripts/does_not_exist.py`", extra="`scripts/does_not_exist.py`(신설)") == []
+# 3) 실재하면 통과
+assert _verify("`python -m pytest validate_plan_gate.py`") == []
+# 4) 경로 주장이 아닌 토큰은 무시한다 — URL·자리표시자·glob·rev:path·미지 변수
+for benign in (
+    "https://example.com/docs/guide.md",
+    "`<계획서>/foo.md`",
+    "`plans/*.md` 전건",
+    "`git show HEAD:scripts/foo.py`",
+    "`$OTHER_ROOT/foo.py`",
+    "`pytest -q` 통과",
+    "`plans/` 와 `archive/plans/`",
+):
+    assert _verify(benign) == [], benign
+# 5) `$HARNESS_SCRIPTS/` 는 배포본으로 해석한다 (실재하는 기계장치 하나로 확인)
+assert _verify("`python \"$HARNESS_SCRIPTS/validate_plan_gate.py\" x.md`") == []
+assert _verify("`python \"$HARNESS_SCRIPTS/nope_does_not_exist.py\"`")
+# 6) 한국어 계획서의 붙여쓰기 구분자(`A`·`B`, 소스↔`C`)를 토큰 경계로 가른다
+assert _verify_path_tokens("소스↔`validate_plan_gate.py`·`nope/x.py` 대조") == ["nope/x.py"]
+# 7) Failure probe 줄은 대상이 아니다 — 부재 경로를 일부러 적는 자리다
+_PROBE_ONLY = "- [ ] **step-1 — x**\n  - Failure probe: `scripts/does_not_exist.py` 를 넣으면 ERROR\n"
+assert validate_verify_targets(_PROBE_ONLY, _TMP) == []
+# 8) 승인 후 모드에서는 꺼져 있다 (plan_path 없이 부르는 경로 포함)
+_PLAN_BAD_VERIFY = GOOD.replace("  - Verify: test one\n", "  - Verify: `pytest -q scripts/does_not_exist.py`\n")
+assert not any("실재하지 않는" in item for item in validate(_PLAN_BAD_VERIFY))
+assert not any(
+    "실재하지 않는" in item
+    for item in validate(_PLAN_BAD_VERIFY, pre_approval=True)  # plan_path 없음 → 꺼짐
+)
+# 9) 레포 루트는 계획서에서 `.git` 을 찾아 올라가 잡는다
+assert plan_repo_root(Path(__file__)) == Path(__file__).resolve().parents[3]
+
+print("plan gate M34 Verify 실재 검사 9건 PASS")
+
+
+# 10) 예외는 토큰 단위다 (2026-09-22) — 부분 문자열이면 다른 파일까지 면제됐다
+#     ㉠ 상위 경로가 다른 동명 파일 — 옛 규칙에서 조용히 통과한 실결함
+#     ㉡ 파일명 접미가 겹치는 이웃 파일 — 옛 규칙도 잡았다(회귀 방지)
+assert _verify("`pytest -q scripts/nope.py`", extra="`other/scripts/nope.py`(신설)"), "상위 경로가 달라도 면제됐다"
+assert _verify("`pytest -q scripts/nope.py`", extra="`scripts/bar_nope.py`(신설)"), "이름 접미만 겹쳐도 면제됐다"
+#     ㉢ 같은 파일을 `$HARNESS_ROOT/` 로 적어도 같은 것으로 본다
+assert _verify("`pytest -q scripts/nope.py`", extra="`$HARNESS_ROOT/scripts/nope.py`(신설)") == []
+
+print("plan gate Files 예외 토큰 대조 3건 PASS")
+
+
+
+# ── 수치 출처 검사가 changeset 디렉터리명을 수치로 오인하지 않는다 ──────────
+# 2026-09-22 스테이징 스모크 관측: DoD 문장에 `changesets/20260922-slug` 를 쓰자
+# 게이트가 `20260922` 를 "출처 없는 수치"로 잡아 FAIL 했다. 압축 날짜는 식별자다.
+import validate_plan_gate as _vpg
+
+
+def _dod_plan(dod_line: str) -> str:
+    return f"> 생성: 2026-09-22\n\n- DoD: {dod_line}\n"
+
+
+def test_compact_date_in_changeset_path_is_not_a_measurement():
+    errs = _vpg.validate_measurement_provenance(
+        _dod_plan("`changesets/20260922-foo-bar/README.md` 에 한 줄을 남긴다"))
+    assert errs == [], errs
+
+
+def test_hyphenated_date_is_still_not_a_measurement():
+    errs = _vpg.validate_measurement_provenance(_dod_plan("2026-09-22 까지 닫는다"))
+    assert errs == []
+
+
+def test_real_measurement_still_requires_provenance():
+    """오탐을 고치면서 진짜 검사를 죽이지 않았는지 — 양방향 계약."""
+    errs = _vpg.validate_measurement_provenance(_dod_plan("테스트 93건이 green 이다"))
+    assert len(errs) == 1 and "수치 출처" in errs[0]
+
+
+def test_bare_eight_digit_number_is_still_checked():
+    """하이픈이 안 붙은 8자리는 날짜 경로가 아니다 — 계속 수치로 본다."""
+    errs = _vpg.validate_measurement_provenance(_dod_plan("처리량 20260922 건을 넘긴다"))
+    assert len(errs) == 1
+
+
+# 2026-09-30 (r6-plan-methodology R1): 코어 3 은 선택 — 자기선언 도메인 + 검토 후 제외만으로 PASS,
+# 적혀 있는데 비어 있으면 여전히 FAIL.
+from validate_plan_gate import validate_scaffold  # noqa: E402
+
+
+def test_scaffold_core_three_optional():
+    domain_only = "## 스캐폴딩 결정\n- 데이터: 스키마 v3 유지 — step-2 가 바뀜\n- 검토 후 제외: 디자인 — 화면 없음\n"
+    assert validate_scaffold(domain_only) == []
+    empty_core = domain_only + "- 검증: \n"
+    assert any("present but empty" in e for e in validate_scaffold(empty_core))
+
+
+# ── M26 step-3 (2026-11-18): 갈래 목록 절 검사 + 격리 worktree 배차 행 거부 ─────────
+# 생성일 2026-11-18 이후 계획서만 — 옛 계획서의 승인 해시를 깨지 않는다(소급 없음).
+# 행 문법: `- <갈래 id> · <제목> · 완료 기준: <한 줄> · 소유: <경로·글롭 쉼표 목록>`
+_FAN_BASE = _P30.replace("> 생성: 2026-09-30", "> 생성: 2026-11-18").replace("격리 worktree", "격리 none")
+_FAN_TWO = (
+    "## 갈래 목록\n"
+    "- 펼침 판정: 펼침 — 갈래 둘 · 소유를 가를 수 있다 · 사용자가 갈래에서 말할 일이 있다\n"
+    "- gate · 계획 게이트 · 완료 기준: 갈래 목록 절 검사가 FAIL/PASS 를 가른다 · 소유: scripts/gate.py, scripts/test_gate.py\n"
+    "- close · 갈래 마감 · 완료 기준: 상태 파일을 쓰지 않고 닫는다 · 소유: scripts/close.py, docs/close/**\n"
+)
+
+
+def _fan_plan(section: str, base: str = _FAN_BASE) -> str:
+    return base.replace("## 스캐폴딩 결정", section + "## 스캐폴딩 결정", 1)
+
+
+def test_fanout_base_without_section_passes():
+    assert validate(_FAN_BASE) == []
+
+
+def test_fanout_section_valid_passes():
+    plan = _fan_plan(_FAN_TWO)
+    assert validate(plan) == []
+    # 절 검사기가 실제로 이 절을 읽었다 — 갈래 둘, 판정 줄은 행이 아니다
+    assert _vpg.parse_fanout_rows(plan) == [
+        ("gate", "계획 게이트", "갈래 목록 절 검사가 FAIL/PASS 를 가른다", ["scripts/gate.py", "scripts/test_gate.py"]),
+        ("close", "갈래 마감", "상태 파일을 쓰지 않고 닫는다", ["scripts/close.py", "docs/close/**"]),
+    ]
+    assert _vpg.validate_fanout(plan) == []
+
+
+def test_old_plan_with_worktree_isolation_still_passes():
+    # 생성일 2026-09-30 — `격리 worktree` 행 그대로 PASS
+    assert "격리 worktree" in _P30
+    assert validate(_P30) == []
+    # 생성일이 없어도 새 규칙은 안 걸린다
+    nodate = _P30.replace("> 생성: 2026-09-30\n", "")
+    assert not any("worktree" in e for e in validate(nodate))
+    # 옛 계획서에 깨진 갈래 목록이 있어도 검사하지 않는다(소급 없음)
+    broken = _fan_plan("## 갈래 목록\n- A · 한 갈래뿐\n", base=_P30)
+    assert not any("갈래" in e for e in validate(broken))
+    # 경계: 생성일 2026-11-17 은 옛 계획서
+    assert validate(_P30.replace("> 생성: 2026-09-30", "> 생성: 2026-11-17")) == []
+
+
+def test_new_plan_worktree_isolation_fails():
+    plan = _FAN_BASE.replace(
+        "- step-2 · worker(sonnet) · 격리 none · 검증 pytest a",
+        "- step-2 · worker(sonnet) · 격리 worktree · 검증 pytest a",
+    )
+    errs = validate(plan)
+    assert any("격리 worktree" in e and "step-2" in e for e in errs), errs
+    assert len([e for e in errs if "격리 worktree" in e]) == 1, errs
+
+
+def test_prose_mentioning_worktree_does_not_fail():
+    # 배차 행이 아닌 본문 문장 속 글자는 검사 대상이 아니다
+    plan = _FAN_BASE.replace(
+        "## 스캐폴딩 결정",
+        "## 메모\n- 옛 배차표의 `격리 worktree` 행은 은퇴했다. 격리 worktree 라는 말은 여기서 설명일 뿐이다\n## 스캐폴딩 결정",
+        1,
+    )
+    assert validate(plan) == []
+
+
+def test_fanout_overlapping_owns_fails():
+    same = _FAN_TWO.replace("docs/close/**", "scripts/gate.py")
+    errs = validate(_fan_plan(same))
+    assert any("소유가 겹친다" in e and "gate" in e and "close" in e and "scripts/gate.py" in e for e in errs), errs
+    # 한 항목이 다른 항목의 접두 경로
+    prefix = _FAN_TWO.replace("docs/close/**", "scripts")
+    errs = validate(_fan_plan(prefix))
+    assert any("소유가 겹친다" in e for e in errs), errs
+    # 글롭 디렉터리 접두
+    glob = _FAN_TWO.replace("scripts/gate.py, scripts/test_gate.py", "scripts/**").replace(
+        "scripts/close.py", "scripts/close.py"
+    )
+    errs = validate(_fan_plan(glob))
+    assert any("소유가 겹친다" in e for e in errs), errs
+    # 이름만 비슷한 형제 경로는 겹침이 아니다
+    sibling = _FAN_TWO.replace("scripts/gate.py", "scripts/gate").replace("scripts/close.py", "scripts/gate_close.py")
+    assert validate(_fan_plan(sibling)) == []
+
+
+def _own_pair(a: str, b: str) -> str:
+    return (
+        "## 갈래 목록\n"
+        f"- gate · 계획 게이트 · 완료 기준: 검사가 돈다 · 소유: {a}\n"
+        f"- close · 갈래 마감 · 완료 기준: 닫는다 · 소유: {b}\n"
+    )
+
+
+def test_fanout_repo_wide_and_glob_owns_overlap():
+    for a, b in [
+        ("**", "scripts/x.py"),
+        ("*", "scripts/x.py"),
+        (".", "scripts/x.py"),
+        ("./", "scripts/x.py"),
+        ("src/*.py", "src/a.py"),
+        ("*.md", "docs/x.md"),
+        ("docs/x.md", "**"),
+    ]:
+        errs = _vpg.validate_fanout(_fan_plan(_own_pair(a, b)))
+        assert any("소유가 겹친다" in e for e in errs), (a, b, errs)
+    # 겹치지 않는 쪽
+    assert _vpg.validate_fanout(_fan_plan(_own_pair("src/a/**", "src/b.py"))) == []
+    assert _vpg.validate_fanout(_fan_plan(_own_pair("src/*.py", "docs/x.md"))) == []
+
+
+def test_fanout_fewer_than_two_fails():
+    one = "## 갈래 목록\n- gate · 계획 게이트 · 완료 기준: 검사가 돈다 · 소유: scripts/gate.py\n"
+    errs = validate(_fan_plan(one))
+    assert any("갈래가 둘 미만" in e for e in errs), errs
+    errs = validate(_fan_plan("## 갈래 목록\n"))
+    assert any("갈래가 둘 미만" in e for e in errs), errs
+
+
+def test_fanout_row_grammar_fails():
+    # 갈래 id 대문자
+    errs = validate(_fan_plan(_FAN_TWO.replace("- gate ·", "- Gate ·")))
+    assert any("갈래 행이 문법 밖" in e for e in errs), errs
+    # 소유 칸 누락
+    errs = validate(_fan_plan(_FAN_TWO.replace(" · 소유: scripts/gate.py, scripts/test_gate.py", "")))
+    assert any("갈래 행이 문법 밖" in e for e in errs), errs
+    # 완료 기준 비어 있음
+    errs = validate(_fan_plan(_FAN_TWO.replace("완료 기준: 갈래 목록 절 검사가 FAIL/PASS 를 가른다", "완료 기준:")))
+    assert any("갈래 행이 문법 밖" in e for e in errs), errs
+    # 같은 갈래 id 두 번
+    errs = validate(_fan_plan(_FAN_TWO.replace("- close ·", "- gate ·")))
+    assert any("갈래 id 중복" in e and "gate" in e for e in errs), errs

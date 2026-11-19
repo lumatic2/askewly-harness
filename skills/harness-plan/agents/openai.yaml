@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Plan"
+  short_description: "Interview to exhaust decisions, write the plan as a decision record, register approval"
+  default_prompt: "Use $harness-plan when the user names the harness plan (e.g. 하네스 플랜으로) or invokes it directly."

@@ -5,9 +5,10 @@
 안 된다 — 원래 막으려던 사고(레포가 총괄에서 조용히 사라지는 것)보다 마감 차단이
 더 나쁘다.
 
-판정 어휘의 정본은 이 파일이 아니라 총괄 뷰 스크립트
-`~/projects/the-orchestration-repo/scripts/portfolio_status.py` 다. 재구현하지 않고
-importlib 로 불러 쓴다 — 총괄과 다른 눈으로 보면 게이트가 의미가 없다.
+판정 어휘의 정본은 이 파일이 아니라 같은 폴더의 `roadmap_parse.py` 다. 재구현하지
+않고 importlib 로 불러 쓴다 — 파서와 다른 눈으로 보면 게이트가 의미가 없다.
+(2026-09-21 이관: 원래 `the-orchestration-repo/scripts/portfolio_status.py` 였으나 그
+총괄 뷰가 은퇴하면서 파서만 여기로 왔다. 어휘와 동작은 그대로다.)
 
 **섹션 배치 어휘의 정본도 이 파일이 아니다** (M5 2026-08-20). 무엇이 진행 계열
 섹션인지는 `harness-run/scripts/roadmap_sync.py` 가 소유하고 여기서 import 해 쓴다.
@@ -22,18 +23,39 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-PORTFOLIO_STATUS = Path.home() / "projects" / "the-orchestration-repo" / "scripts" / "portfolio_status.py"
+ROADMAP_PARSE = Path(__file__).resolve().parent / "roadmap_parse.py"
 
 # 배포 레이아웃과 소스 트리 셋 다에서 성립한다:
 #   ~/.claude/skills/session-end/bin/  → ~/.claude/skills/harness-run/scripts/
 #   ~/.codex/skills/session-end/bin/   → ~/.codex/skills/harness-run/scripts/
 #   promoted/session-end/bin/          → promoted/harness-run/scripts/
-# 스테이징 이명 레인(`harness-run-stg`)처럼 어긋나는 자리는 `--sync-scripts` 로 준다.
-SYNC_SCRIPTS = Path(__file__).resolve().parents[2] / "harness-run" / "scripts"
+# 스테이징 이명 레인(`harness-run-stg`)은 셋째 후보로 찾고, 그래도 어긋나면 `--sync-scripts` 로 준다.
+# h-e M33 step-5 (F8): 종전엔 harness-run 경로 하나를 고정해 `-stg` 배포본에서 섹션 판정이 조용히 꺼졌다.
+
+
+def find_sync_scripts(here: Path | None = None, env: "dict[str, str] | None" = None) -> Path:
+    """roadmap_sync.py 가 있는 디렉터리 — ① $HARNESS_SCRIPTS ② 형제 harness-run ③ 형제 harness-run-stg.
+    셋 다 없으면 ② 를 돌려주되 stderr 에 한 줄 경고한다(조용한 무동작 금지)."""
+    here = (here or Path(__file__)).resolve()
+    env = os.environ if env is None else env
+    candidates = []
+    if env.get("HARNESS_SCRIPTS"):
+        candidates.append(Path(env["HARNESS_SCRIPTS"]))
+    base = here.parents[2]
+    candidates += [base / "harness-run" / "scripts", base / "harness-run-stg" / "scripts"]
+    for c in candidates:
+        if (c / "roadmap_sync.py").is_file():
+            return c
+    print(f"roadmap_hygiene: roadmap_sync.py 를 못 찾음 — 후보 {[str(c) for c in candidates]} · 섹션 판정은 생략된다", file=sys.stderr)
+    return candidates[-2] if len(candidates) >= 2 else candidates[0]
+
+
+SYNC_SCRIPTS = find_sync_scripts()
 
 HEADING_RE = re.compile(r"^#{2,4}\s+(?P<title>.+?)\s*$")
 
@@ -53,9 +75,9 @@ def load_roadmap_sync(scripts_dir: Path = SYNC_SCRIPTS):
     return module
 
 
-def load_portfolio_status(path: Path = PORTFOLIO_STATUS):
-    """총괄 뷰 스크립트를 모듈로 불러온다. 실패는 호출자가 생략으로 처리한다."""
-    spec = importlib.util.spec_from_file_location("_portfolio_status", path)
+def load_roadmap_parser(path: Path = ROADMAP_PARSE):
+    """ROADMAP 파서를 모듈로 불러온다. 실패는 호출자가 생략으로 처리한다."""
+    spec = importlib.util.spec_from_file_location("_roadmap_parse", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("모듈을 불러올 수 없다: {}".format(path))
     module = importlib.util.module_from_spec(spec)
@@ -116,9 +138,6 @@ def build_report(roadmap: Path, repo: Path, ps, sync_scripts: Path = SYNC_SCRIPT
     _goal, milestones, parked = ps.parse_roadmap(roadmap)
 
     active = [m for m in milestones if m.get("status") in ps.ACTIVE_STATUSES]
-    blocked = [m for m in milestones if m.get("status") in ps.BLOCKED_STATUSES]
-    live = [m for m in milestones if m.get("status") not in ps.TERMINAL_STATUSES]
-    pending = [m for m in live if m.get("status") == "pending"]
 
     body: list[str] = []
     found = 0
@@ -202,7 +221,7 @@ def build_report(roadmap: Path, repo: Path, ps, sync_scripts: Path = SYNC_SCRIPT
         return [], 0
 
     header = "ROADMAP 위생: 발견 {}건 (active {})".format(found, len(active))
-    tail = "고치기 전에 사용자에게 확인한다 — 이 게이트는 파일을 수정하지 않는다."
+    tail = "이 게이트는 파일을 수정하지 않는다 — 발견은 HANDOFF.md 주의점으로 넘긴다."
     return [header, ""] + body + ["", tail], found
 
 
@@ -210,7 +229,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--roadmap", default="ROADMAP.md")
     parser.add_argument("--repo", default=".", help="INDEX.md kind 태그 조회에 쓰는 레포 루트")
-    parser.add_argument("--portfolio-status", default=str(PORTFOLIO_STATUS))
+    parser.add_argument("--parser", "--portfolio-status", dest="parser",
+                        default=str(ROADMAP_PARSE))
     parser.add_argument("--sync-scripts", default=str(SYNC_SCRIPTS),
                         help="배치 어휘를 가진 roadmap_sync.py 가 있는 디렉터리 "
                              "(스테이징 이명 레인처럼 기본 경로가 어긋나는 자리에서 준다)")
@@ -221,11 +241,12 @@ def main(argv: list[str] | None = None) -> int:
         print("ROADMAP 위생: 생략 — {} 없음".format(roadmap))
         return 0
 
-    # D4: 임포트만이 아니라 **점검 중 모든 예외**를 생략으로 흘린다. load_kinds() 는
-    # 임포트가 아니라 호출 시점에 the-orchestration-repo/manifests/projects.json(생성물이라
-    # 다른 기기엔 없을 수 있다)을 읽어 터진다. 여기서 예외가 새면 세션 마감이 막힌다.
+    # D4: 임포트만이 아니라 **점검 중 모든 예외**를 생략으로 흘린다. 여기서 예외가
+    # 새면 세션 마감이 막힌다. (구 판본은 the-orchestration-repo/manifests/projects.json
+    # 을 읽다 터지는 경로가 있었다 — 그 의존은 2026-09-21 에 사라졌지만, 예외를
+    # 삼키는 계약 자체는 이 게이트의 존재 이유라 유지한다.)
     try:
-        ps = load_portfolio_status(Path(args.portfolio_status))
+        ps = load_roadmap_parser(Path(args.parser))
         report, found = build_report(roadmap, Path(args.repo), ps, Path(args.sync_scripts))
         if not found:
             _goal, milestones, _parked = ps.parse_roadmap(roadmap)

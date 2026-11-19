@@ -6,8 +6,8 @@ It does not auto-continue sessions or mutate files; it only validates the
 current active-work pointer and derives plan checklist progress.
 
 거처 (FA1 step-4, 2026-07-24): **여기가 정본이다** — 구 정본 `the-source-repo/scripts/`
-는 로더 shim 으로 남아 이 파일을 불러 쓴다("기계장치는 한 곳"). `~/.codex/hooks/` 사본은
-`the-source-repo/scripts/deploy_codex_hooks.py` 가 여기서 출고한다(훅 한 벌 import 용).
+는 로더 shim 으로 남아 이 파일을 불러 쓴다("기계장치는 한 곳"). 배포본은 `setup.sh` 가 양 런타임
+`skills/harness-run/scripts/` 로 낸다(구 `~/.codex/hooks/` 사본은 2026-09-21 은퇴 — 소비자 0).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 STATE_REL = Path(".harness") / "work.json"
 CONTINUABLE_STATUSES = {"active", "paused"}
-TERMINAL_STATUSES = {"completed", "abandoned"}
+TERMINAL_STATUSES = {"completed", "abandoned", "dropped"}
 COUNTED_HEADINGS = {"Step 트리", "Step Tree", "TODOs", "Final Verification Wave"}
 
 # 문서화된 정지 사유 → stop_detail 의 canonical 필드. continuation hook 과 diagnose 가
@@ -470,7 +470,7 @@ def _marker_attrs(raw: str) -> dict[str, str]:
     return dict(MARKER_ATTR_RE.findall(raw))
 
 
-def user_approved_milestones(state: Any) -> set[str]:
+def user_approved_milestones(state: Any, include_chain: bool = True) -> set[str]:
     """사용자 승인 이력이 있는 milestone id 집합 (소문자) — FA1 step-1 (2026-07-24).
 
     두 경로만 승인으로 인정한다:
@@ -494,9 +494,175 @@ def user_approved_milestones(state: Any) -> set[str]:
             if milestone:
                 approved.add(milestone)
         chain = approval.get("chain")
-        if isinstance(chain, list):
-            approved.update(str(item).strip().lower() for item in chain if str(item).strip())
+        if include_chain and isinstance(chain, list):
+            approved.update(k for k in (_chain_item_key(state, item) for item in chain) if k)
     return approved
+
+
+def _chain_item_key(state: Any, item: Any) -> str:
+    """chain 항목 하나를 milestone id(소문자)로 정규화한다 (2026-11-08).
+
+    chain 에 work-id(`m158-screens-and-copy`)가 저장된 영수증이 있었다 — ROADMAP 마커 id 와 안
+    맞아 범위가 통째로 비고 `{}` 가 나왔다. state 의 work 키(대소문자 무시)와 일치하면 그 work 의
+    milestone_id 로 바꾸고, 아니면 항목 그대로(milestone id 로 본다).
+    """
+    key = str(item).strip().lower()
+    works = state.get("works") if isinstance(state, dict) else None
+    if key and isinstance(works, dict):
+        for work_id, entry in works.items():
+            if str(work_id).strip().lower() == key and isinstance(entry, dict):
+                milestone = str(entry.get("milestone_id") or "").strip().lower()
+                if milestone:
+                    return milestone
+    return key
+
+
+def _normalized_chain(state: Any, chain: Any) -> list[str]:
+    out: list[str] = []
+    if isinstance(chain, list):
+        for item in chain:
+            key = _chain_item_key(state, item)
+            if key and key not in out:
+                out.append(key)
+    return out
+
+
+def _chain_approved(work: Any) -> bool:
+    """연쇄로 들어온 work 인가 — 영수증 `approved_by` 가 `chain:` 접두(`--chained-from` 승인)."""
+    approval = work.get("approval") if isinstance(work, dict) else None
+    approved_by = approval.get("approved_by") if isinstance(approval, dict) else None
+    return isinstance(approved_by, str) and approved_by.startswith("chain:")
+
+
+def _chain_scope_info(state: Any, work: dict[str, Any]) -> tuple[list[str], bool]:
+    """(멤버 id 목록, 자기 chain 인가). 소문자·chain 순서·중복 제거.
+
+    2026-11-08 재수리: 범위는 **닫은 work 자신의 영수증 chain** 이 우선이다. 예전에는 done_id 를
+    멤버로 가진 다른 work 의 chain 을 통째로 더해, 옛 M155 chain(M153·M154·M157·M145)이 M156 의
+    새 chain(M158·M159)에 섞여 남의 세션 소유 M145 가 ready 로 나왔다.
+    자기 chain 에 done_id 말고 남은 멤버가 없을 때만 폴백한다 — done_id 를 품은 옛 chain 에서
+    done_id **뒤쪽** 멤버만. 앞쪽은 이미 지나간 일이라 되살리지 않는다.
+    """
+    done_id = str(work.get("milestone_id") or "").strip().lower() if isinstance(work, dict) else ""
+    approval = work.get("approval") if isinstance(work, dict) else None
+    own = _normalized_chain(state, approval.get("chain") if isinstance(approval, dict) else None)
+    if any(m != done_id for m in own):
+        return own, True
+    # M29 step-3: 폴백은 연쇄로 들어온 work(approved_by=chain:…)에만. 단독 승인 work 가 옛 chain
+    # 꼬리를 빌리면 안 된다(askewly-data m3-intake-gate 가 m1 chain 의 M4 를 needs-plan 으로 냈다).
+    if not _chain_approved(work):
+        return [], False
+    members: list[str] = []
+    works = state.get("works") if isinstance(state, dict) else None
+    if done_id and isinstance(works, dict):
+        for entry in works.values():
+            if not isinstance(entry, dict) or entry is work:
+                continue
+            other = entry.get("approval")
+            chain = _normalized_chain(state, other.get("chain") if isinstance(other, dict) else None)
+            if done_id in chain:
+                for key in chain[chain.index(done_id) + 1:]:
+                    if key != done_id and key not in members:
+                        members.append(key)
+    return members, False
+
+
+def chain_scope(state: Any, work: dict[str, Any]) -> list[str]:
+    """방금 닫은 work 가 속한 chain 의 멤버 id 목록 (소문자, chain 순서, 중복 제거).
+
+    자기 영수증 chain 우선, 비었을 때만 옛 chain 의 done_id 뒤쪽 폴백 — `_chain_scope_info`.
+    멤버가 있으면 연쇄 후보는 멤버뿐이고 **chain 에 적힌 순서**로 본다.
+    """
+    return _chain_scope_info(state, work)[0]
+
+
+def _ordered_candidates(
+    text: str, members: list[str], done_id: str, excluded: set[str]
+) -> list[tuple[str, int]]:
+    """후보 (milestone id 표기, 마커 끝 위치) 를 볼 순서대로.
+
+    멤버가 있으면 chain 순서(=승인 때 정한 ROADMAP 순서), 없으면 ROADMAP 순서.
+    pending/active 마커가 아닌 것·done_id·excluded 는 뺀다.
+    """
+    found: list[tuple[str, int]] = []
+    for match in MILESTONE_MARKER_RE.finditer(text):
+        attrs = _marker_attrs(match.group(1))
+        milestone_id = attrs.get("id", "").strip()
+        key = milestone_id.lower()
+        if not milestone_id or attrs.get("status") not in CHAINED_MILESTONE_STATUSES:
+            continue
+        if key == done_id or key in excluded:
+            continue
+        if members and key not in members:
+            continue
+        found.append((milestone_id, match.end()))
+    if members:
+        order = {m: i for i, m in enumerate(members)}
+        found.sort(key=lambda item: order[item[0].lower()])  # 안정 정렬 — 중복 마커는 ROADMAP 순 유지
+    return found
+
+
+def _excluded_milestones(state: Any, work: dict[str, Any], scoped: bool) -> set[str]:
+    """후보에서 빼는 milestone — 터미널 work 가 있는 것, (폴백이면) 다른 세션이 쥔 active/paused work 의 것."""
+    excluded: set[str] = set()
+    works = state.get("works") if isinstance(state, dict) else None
+    if not isinstance(works, dict):
+        return excluded
+    for entry in works.values():
+        if not isinstance(entry, dict) or entry is work:
+            continue
+        milestone = str(entry.get("milestone_id") or "").strip().lower()
+        if not milestone:
+            continue
+        status = entry.get("status")
+        if status in TERMINAL_STATUSES:
+            excluded.add(milestone)
+        elif not scoped and status in CONTINUABLE_STATUSES:
+            # 다른 세션이 쥔 것만 뺀다 — 소유자가 없거나 같은 소유자면 이어갈 다음 일로 남긴다
+            # (2026-11-03, own-receipt 테스트와 정합 · M128 사고는 다른 세션 소유였다).
+            holder = entry.get("owner_session_uuid")
+            if holder and holder != work.get("owner_session_uuid"):
+                excluded.add(milestone)
+    return excluded
+
+
+def chain_remaining(root: Path, milestone_id: str, state: Any = None) -> list[str]:
+    """접는 milestone 이 속한 chain 의 남은 pending/active 멤버 (M24, 2026-11-03).
+
+    중단 종결 때 「같이 접을 후속」을 사용자에게 고르게 하려고 쓴다. chain 순서, ROADMAP 표기 그대로.
+    터미널 work 가 있는 것·ROADMAP 마커가 pending/active 가 아닌 것·자기 자신은 뺀다.
+    """
+    if state is None:
+        state = read_json(root / STATE_REL)
+    key = milestone_id.strip().lower()
+    works = state.get("works") if isinstance(state, dict) else None
+    target: dict[str, Any] = {"milestone_id": milestone_id}
+    if isinstance(works, dict):
+        for entry in works.values():
+            if isinstance(entry, dict) and str(entry.get("milestone_id") or "").strip().lower() == key:
+                target = entry
+                break
+    members = [m for m in chain_scope(state, target) if m != key]
+    markers: dict[str, tuple[str, str]] = {}
+    roadmap = root / "ROADMAP.md"
+    if roadmap.is_file():
+        text = roadmap.read_text(encoding="utf-8", errors="replace")
+        for match in MILESTONE_MARKER_RE.finditer(text):
+            attrs = _marker_attrs(match.group(1))
+            mid = attrs.get("id", "").strip()
+            if mid:
+                markers[mid.lower()] = (mid, attrs.get("status", ""))
+    terminal: set[str] = set()
+    if isinstance(works, dict):
+        for entry in works.values():
+            if isinstance(entry, dict) and entry.get("status") in TERMINAL_STATUSES:
+                terminal.add(str(entry.get("milestone_id") or "").strip().lower())
+    remaining = []
+    for member in members:
+        shown, status = markers.get(member, (member, ""))
+        if status in CHAINED_MILESTONE_STATUSES and member not in terminal:
+            remaining.append(shown)
+    return remaining
 
 
 def chained_candidates(
@@ -530,16 +696,17 @@ def chained_candidates(
         state = read_json(root / STATE_REL)
     approved = user_approved_milestones(state)
     done_id = str(work.get("milestone_id") or "").strip().lower()
+    members, own = _chain_scope_info(state, work)
+    if not own and not _chain_approved(work):
+        # M29: 자기 chain 도 없고 연쇄로 들어오지도 않은 단독 승인 work 는 남의 옛 chain 을 빌리지 않는다 —
+        # 다음 계획서가 plans/ 에 있어도 다른 work 의 chain 멤버십(②)으로는 ready 가 되지 않는다.
+        # 그 계획 자체의 사용자 승인 영수증(①)만 인정한다.
+        approved = user_approved_milestones(state, include_chain=False)
+    excluded = _excluded_milestones(state, work, own)
     unapproved: list[str] = []
     found: dict[str, str] | None = None
-    for match in MILESTONE_MARKER_RE.finditer(text):
-        attrs = _marker_attrs(match.group(1))
-        milestone_id = attrs.get("id", "").strip()
-        if not milestone_id or attrs.get("status") not in CHAINED_MILESTONE_STATUSES:
-            continue
-        if milestone_id.lower() == done_id:
-            continue
-        for plan in sorted(plans_dir.glob(f"*-{milestone_id.lower()}-*.md")):
+    for milestone_id, _end in _ordered_candidates(text, members, done_id, excluded):
+        for plan in _plans_for(plans_dir, milestone_id):
             if milestone_id.lower() not in approved:
                 unapproved.append(milestone_id)
                 break
@@ -552,12 +719,73 @@ def chained_candidates(
     return found, unapproved
 
 
+def _milestone_block_field(text: str, start: int, field: str) -> str:
+    """마커 뒤 블록(다음 마커 전까지)에서 `- <field>: …` 한 줄 값."""
+    nxt = MILESTONE_MARKER_RE.search(text, start)
+    block = text[start: nxt.start() if nxt else len(text)]
+    match = re.search(rf"^- {re.escape(field)}:\s*(.+)$", block, re.M)
+    return match.group(1).strip() if match else ""
+
+
+def _plans_for(plans_dir: Path, milestone_id: str) -> list[Path]:
+    """`*-<id>-*.md` 를 대소문자 무관하게 — 대소문자 구분 파일시스템에서 `M2` 이름도 잡는다."""
+    if not plans_dir.is_dir():
+        return []
+    needle = f"-{milestone_id.lower()}-"
+    return sorted(p for p in plans_dir.glob("*.md") if needle in p.name.lower())
+
+
+def chain_next(
+    root: Path, work: dict[str, Any], state: Any = None
+) -> tuple[dict[str, str] | None, list[str]]:
+    """목표 연쇄의 다음 한 걸음 (M23, 2026-10-26).
+
+    ROADMAP 순서로 pending/active 마커를 훑어 처음 걸리는 것을 돌려준다:
+      - 계획서가 있고 승인 이력(영수증·chain)이 있다 → status `ready`
+      - 계획서가 없고 목표 chain 에 들어 있다 → status `needs-plan` — 끝난 세션이
+        계획을 써서 `approve_harness_plan.py --chained-from` 으로 이어간다
+    계획서는 있으나 승인 이력이 없는 것은 미승인 초안이라 건너뛰고 두 번째 값에 모은다.
+    """
+    found, unapproved = chained_candidates(root, work, state)
+    roadmap = root / "ROADMAP.md"
+    if not roadmap.is_file():
+        return None, unapproved
+    text = roadmap.read_text(encoding="utf-8", errors="replace")
+    if state is None:
+        state = read_json(root / STATE_REL)
+    members, own = _chain_scope_info(state, work)
+    excluded = _excluded_milestones(state, work, own)
+    plans_dir = root / "plans"
+    done_id = str(work.get("milestone_id") or "").strip().lower()
+    for milestone_id, end in _ordered_candidates(text, members, done_id, excluded):
+        if found and found["milestone_id"] == milestone_id:
+            return {**found, "status": "ready"}, unapproved
+        has_plan = bool(_plans_for(plans_dir, milestone_id))
+        if not has_plan and milestone_id.lower() in members:
+            return {
+                "status": "needs-plan",
+                "milestone_id": milestone_id,
+                "dod": _milestone_block_field(text, end, "DoD"),
+            }, unapproved
+    return None, unapproved
+
+
 def next_chained_milestone(
     root: Path, work: dict[str, Any], state: Any = None
 ) -> dict[str, str] | None:
     """`chained_candidates` 의 매치만 — 기존 호출자(continuation hook) 호환 유지."""
     found, _ = chained_candidates(root, work, state)
     return found
+
+
+def normalize_list_work(raw: dict[str, Any]) -> dict[str, Any]:
+    """legacy list-form `works` 항목을 dict-form 과 같은 키로 정규화."""
+    return {
+        **raw,
+        "work_id": raw.get("work_id") or raw.get("id"),
+        "plan_path": raw.get("plan_path") or raw.get("plan"),
+        "changeset_path": raw.get("changeset_path") or "<product-phase>",
+    }
 
 
 def active_work(state: dict[str, Any]) -> dict[str, Any] | None:
@@ -570,13 +798,59 @@ def active_work(state: dict[str, Any]) -> dict[str, Any] | None:
         active = [item for item in works if isinstance(item, dict) and item.get("status") in CONTINUABLE_STATUSES]
         if len(active) != 1:
             return None
-        raw = active[0]
-        return {
-            **raw,
-            "work_id": raw.get("work_id") or raw.get("id"),
-            "plan_path": raw.get("plan_path") or raw.get("plan"),
-            "changeset_path": raw.get("changeset_path") or "<product-phase>",
-        }
+        return normalize_list_work(active[0])
+    return None
+
+
+def continuable_works(state: Any) -> list[dict[str, Any]]:
+    """이 체크아웃에서 아직 이어갈 수 있는 work 전부 (M9, 2026-09-02).
+
+    `active_work()` 는 손대지 않는다 — 포인터는 "마지막으로 실행(또는 완료)된 work"
+    라는 의미를 그대로 유지하고(D1), 승인 다수는 이 집합으로 표현한다.
+    """
+    if not isinstance(state, dict):
+        return []
+    works = state.get("works")
+    items: list[dict[str, Any]] = []
+    if isinstance(works, dict):
+        for key, value in works.items():
+            if isinstance(value, dict) and value.get("status") in CONTINUABLE_STATUSES:
+                items.append({**value, "work_id": value.get("work_id") or key})
+    elif isinstance(works, list):
+        for value in works:
+            if isinstance(value, dict) and value.get("status") in CONTINUABLE_STATUSES:
+                items.append(normalize_list_work(value))
+    return items
+
+
+def session_work(
+    state: Any, token: str | None = None, runtime: str = "claude"
+) -> dict[str, Any] | None:
+    """이 세션이 지금 실행 중인 work 를 고른다 (M9 D1 · 순서 정정 2026-09-02).
+
+    ① token 이 소유한 continuable 이 정확히 1건이면 그것 ② 아니면 포인터 work 가
+    continuable 이면 그것 ③ 아니면 continuable 이 정확히 1건일 때 그것 ④ 그 외 None.
+
+    **소유가 포인터를 이긴다.** 포인터를 먼저 보면 승인 2건이 공존하는 회차에서
+    비소유 세션이 남의 영수증으로 `require-approval` 을 통과하고(B6 재발),
+    `sync-steps` 가 남의 work 에 진행을 적는다 — 둘 다 이 milestone 이 없애려던 것이다
+    (2026-09-02 코드 리뷰 지적 1·2). 단일 work 레포에서는 두 순서가 같은 답을 낸다.
+    """
+    if not isinstance(state, dict):
+        return None
+    candidates = continuable_works(state)
+    if not candidates:
+        return None
+    owned = [work for work in candidates if token_owns_work(token, work, runtime)]
+    if len(owned) == 1:
+        return owned[0]
+    pointer_id = state.get("active_work_id")
+    if isinstance(pointer_id, str):
+        for work in candidates:
+            if work.get("work_id") == pointer_id:
+                return work
+    if len(candidates) == 1:
+        return candidates[0]
     return None
 
 
@@ -731,6 +1005,42 @@ def is_linked_worktree(root: Path) -> bool:
     return (root / ".git").is_file()
 
 
+def approval_verdict(root: Path, work: dict[str, Any]) -> str:
+    """승인 hash 대조 결과 한 줄 (M9 D5, 2026-09-02).
+
+    사람(에이전트)이 raw `sha256(파일)` 을 손대조해 MISMATCH 오경보를 본 사고가
+    있었다 — CRLF 체크아웃에서 raw 는 항상 어긋난다. 판정은 `approval_errors` 와
+    같은 후보 집합을 쓰고(새 해시 경로를 만들지 않는다) 결과만 문장으로 낸다.
+    """
+    approval = work.get("approval")
+    expected = approval.get("plan_sha256") if isinstance(approval, dict) else None
+    if not isinstance(expected, str) or not expected.strip():
+        return "영수증 없음"
+    plan_path = resolve_repo_path(root, work.get("plan_path") if isinstance(work.get("plan_path"), str) else None)
+    if plan_path is None or not plan_path.exists():
+        return "계획서 없음"
+    normalized = plan_fingerprint(plan_path)
+    if normalized is None:
+        return "계획서 없음"
+    if expected == normalized:
+        return f"정규화 일치({normalized[:8]})"
+    if expected == file_sha256(plan_path):
+        return "legacy raw 일치"
+    return "불일치"
+
+
+def approval_lines(root: Path, state: Any) -> list[str]:
+    """continuable work 목록과 work 별 승인 대조 줄 (M9 step-4)."""
+    works = continuable_works(state)
+    if not works:
+        return []
+    ids = ", ".join(sorted(str(item.get("work_id")) for item in works))
+    lines = [f"continuable: [{ids}]"]
+    for item in sorted(works, key=lambda w: str(w.get("work_id"))):
+        lines.append(f"  {item.get('work_id')} approval: {approval_verdict(root, item)}")
+    return lines
+
+
 def diagnose(root: Path, token: str | None, runtime: str = "claude") -> dict[str, Any]:
     """이 루트에서 continuation 이 발화하지 않는 이유를 판정한다 (HQ1 step-1).
 
@@ -751,12 +1061,18 @@ def diagnose(root: Path, token: str | None, runtime: str = "claude") -> dict[str
         )
         return {"reason": "no-work-json", "message": f"continuation 침묵: .harness/work.json 없음.{hint}", "worktree": worktree}
     state = read_json(state_path)
+    approvals = approval_lines(root, state)
     work = active_work(state) if isinstance(state, dict) else None
     if work is None:
-        return {"reason": "no-active-work", "message": "continuation 침묵: active work 없음 (승인된 작업이 없거나 전부 종결).", "worktree": worktree}
+        return {
+            "reason": "no-active-work",
+            "message": "continuation 침묵: active work 없음 (승인된 작업이 없거나 전부 종결).",
+            "worktree": worktree,
+            "approvals": approvals,
+        }
     status = str(work.get("status") or "")
     if status not in CONTINUABLE_STATUSES:
-        return {"reason": "not-continuable", "message": f"continuation 침묵: active work {work.get('work_id')} 상태가 {status or '<없음>'}.", "worktree": worktree}
+        return {"reason": "not-continuable", "message": f"continuation 침묵: active work {work.get('work_id')} 상태가 {status or '<없음>'}.", "worktree": worktree, "approvals": approvals}
     if not token_owns_work(token, work, runtime):
         owner = work.get("owner_session_uuid") or f"session_ids={work.get('session_ids')}"
         return {
@@ -764,19 +1080,20 @@ def diagnose(root: Path, token: str | None, runtime: str = "claude") -> dict[str
             "message": (
                 f"continuation 침묵: 현 세션({token or '<토큰 없음>'})이 active work {work.get('work_id')} 의 소유자가 아님"
                 f" (소유: {owner}). 정당하게 이어받으려면 RL1 재개 절차로 소유를 승계하십시오 — "
-                f"`python ~/.codex/hooks/harness_work_state.py resume --root . --work-id {work.get('work_id')} --session <runtime>:<세션UUID>`"
+                f"`python ~/.<claude|codex>/skills/harness-run/scripts/harness_work_state.py resume --root . --work-id {work.get('work_id')} --session <runtime>:<세션UUID>`"
             ),
             "owner": work.get("owner_session_uuid"),
             "work_id": work.get("work_id"),
             "worktree": worktree,
+            "approvals": approvals,
         }
     plan_path = resolve_repo_path(root, work.get("plan_path") if isinstance(work.get("plan_path"), str) else None)
     checklist = get_runtime_checklist(work, plan_path) if plan_path is not None else Checklist(0, 0, 0, None)
     if checklist.remaining <= 0:
-        return {"reason": "remaining-0", "message": f"continuation 침묵: plan 에 남은 top-level step 이 없음 ({checklist.completed}/{checklist.total} 완료).", "worktree": worktree}
+        return {"reason": "remaining-0", "message": f"continuation 침묵: plan 에 남은 top-level step 이 없음 ({checklist.completed}/{checklist.total} 완료).", "worktree": worktree, "approvals": approvals}
     if allowed_hard_stop(work, checklist.remaining):
-        return {"reason": "honored-stop", "message": f"continuation 침묵: 문서화된 정지 stop_reason={work.get('stop_reason')} 이 유효 (재개는 RL1 절차).", "worktree": worktree}
-    return {"reason": "ok", "message": f"정상: continuation 발화 예상 — active work {work.get('work_id')}, 남은 step {checklist.remaining}/{checklist.total}.", "worktree": worktree}
+        return {"reason": "honored-stop", "message": f"continuation 침묵: 문서화된 정지 stop_reason={work.get('stop_reason')} 이 유효 (재개는 RL1 절차).", "worktree": worktree, "approvals": approvals}
+    return {"reason": "ok", "message": f"정상: continuation 발화 예상 — active work {work.get('work_id')}, 남은 step {checklist.remaining}/{checklist.total}.", "worktree": worktree, "approvals": approvals}
 
 
 def resume_work(root: Path, work_id: str, token: str) -> tuple[bool, str]:
@@ -810,6 +1127,8 @@ def resume_work(root: Path, work_id: str, token: str) -> tuple[bool, str]:
     if token not in session_ids:
         session_ids.append(token)
     work["session_ids"] = session_ids
+    # D3 (M9): 승계 성공 순간이 "이 체크아웃에서 지금 실행되는 work" 가 확정되는 시점이다.
+    state["active_work_id"] = work_id
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     return True, f"승계 완료: work {work_id} 소유 = {token}. continuation 이 이 세션에 발화합니다."
 
@@ -846,18 +1165,24 @@ def parse_args() -> argparse.Namespace:
         "command",
         nargs="?",
         default="status",
-        choices=("status", "diagnose", "resume", "require-approval", "sync-steps", "next-chained"),
+        choices=("status", "diagnose", "resume", "require-approval", "sync-steps", "next-chained", "chain-remaining"),
     )
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument("--session", help="세션 token (기본: CLAUDE_CODE_SESSION_ID 환경변수 → claude:<uuid>)")
     parser.add_argument("--runtime", choices=("claude", "codex"), default="claude")
-    parser.add_argument("--work-id", help="resume 대상 work id")
+    parser.add_argument("--work-id", help="대상 work id (resume · require-approval · sync-steps)")
+    parser.add_argument("--milestone-id", help="chain-remaining 대상 milestone id")
     return parser.parse_args()
 
 
-def require_approval(root: Path) -> tuple[bool, str]:
+def require_approval(
+    root: Path,
+    token: str | None = None,
+    work_id: str | None = None,
+    runtime: str = "claude",
+) -> tuple[bool, str]:
     """§E 진입 게이트 (MM7 step-3).
 
     승인 없이 §E 로 들어가는 것과, milestone 사이의 정상 유휴는 `status` 에서
@@ -866,9 +1191,24 @@ def require_approval(root: Path) -> tuple[bool, str]:
     승인된 active work 가 없으면 exit 1 + 무엇을 하라는지 안내.
     """
     state = read_json(root / STATE_REL)
-    works = state.get("works") if isinstance(state, dict) else None
-    active_id = state.get("active_work_id") if isinstance(state, dict) else None
-    work = works.get(active_id) if isinstance(works, dict) and isinstance(active_id, str) else None
+    # M9 (B6): 판정 대상은 `--work-id` 명시 > 세션이 소유한 continuable > 포인터 순서.
+    # 승인 다수가 공존할 때 다른 work 의 영수증으로 통과하지 않게 한다.
+    work: Any = None
+    if isinstance(state, dict) and isinstance(work_id, str) and work_id:
+        works = state.get("works")
+        candidate = works.get(work_id) if isinstance(works, dict) else None
+        if candidate is None and isinstance(works, list):
+            candidate = next(
+                (
+                    normalize_list_work(item)
+                    for item in works
+                    if isinstance(item, dict) and (item.get("work_id") or item.get("id")) == work_id
+                ),
+                None,
+            )
+        work = candidate
+    else:
+        work = session_work(state, token, runtime)
     if not isinstance(work, dict) or work.get("status") not in CONTINUABLE_STATUSES:
         return False, (
             "거부: 승인된 active work 가 없다 — §E 로 들어갈 수 없다.\n"
@@ -891,8 +1231,15 @@ def main() -> int:
         if not isinstance(state, dict):
             print(f"거부: {state_path} 없음/손상")
             return 1
-        work_id = args.work_id or state.get("active_work_id")
-        work = (state.get("works") or {}).get(work_id)
+        # M9 (B6): 기본 대상도 session_work 선택을 따른다 — 포인터가 남의 work 를
+        # 가리키는 회차에서 엉뚱한 work 의 steps 를 갱신하지 않게.
+        if args.work_id:
+            work_id = args.work_id
+            work = (state.get("works") or {}).get(work_id)
+        else:
+            token = normalize_session_token(args.session, args.runtime) or env_session_token(args.runtime)
+            work = session_work(state, token, args.runtime)
+            work_id = work.get("work_id") if isinstance(work, dict) else state.get("active_work_id")
         if not isinstance(work, dict):
             print(f"거부: work {work_id} 없음")
             return 1
@@ -909,6 +1256,13 @@ def main() -> int:
         total = len(work.get("steps") or [])
         print(f"sync-steps: {changed}건 갱신 · {done}/{total} completed")
         return 0
+    if args.command == "chain-remaining":
+        if not args.milestone_id:
+            print("거부: chain-remaining 은 --milestone-id 가 필요합니다.")
+            return 2
+        remaining = chain_remaining(args.root.resolve(), args.milestone_id)
+        print(json.dumps({"milestone_id": args.milestone_id, "remaining": remaining}, ensure_ascii=False))
+        return 0
     if args.command == "next-chained":
         # 승인된 계획 연쇄에서 **다음 milestone** 을 묻는다 (2026-07-23 OI3).
         #
@@ -919,8 +1273,15 @@ def main() -> int:
         # 완료 절차가 이 커맨드를 직접 부르면 연쇄 진행이 훅 발화 횟수와 무관해진다.
         state = read_json(args.root.resolve() / STATE_REL)
         work = active_work(state) if isinstance(state, dict) else None
+        # 2026-11-03: --work-id 가 있으면 그 work 의 chain 이 대상이다(포인터는 남의 작업일 수 있다).
+        if isinstance(state, dict) and args.work_id and isinstance(state.get("works"), dict):
+            named = state["works"].get(args.work_id)
+            if isinstance(named, dict):
+                work = named
+        # M23 (2026-10-26): 목표 chain 에 든 다음 milestone 에 계획서가 없으면 exit 3
+        # (`needs-plan`) — 멈춤이 아니라 「끝난 세션이 계획을 쓴다」는 신호다.
         chained, unapproved = (
-            chained_candidates(args.root.resolve(), work, state)
+            chain_next(args.root.resolve(), work, state)
             if isinstance(work, dict)
             else (None, [])
         )
@@ -929,6 +1290,10 @@ def main() -> int:
             if unapproved:
                 payload["unapproved_candidates"] = sorted(unapproved)
             print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        elif chained and chained["status"] == "needs-plan":
+            print(f"다음 milestone: {chained['milestone_id']} — 계획서 없음 (목표 chain 멤버)")
+            print(f"  DoD: {chained['dod']}")
+            print("  끝난 세션이 계획서를 쓰고 plan-verifier → approve_harness_plan.py --chained-from 으로 이어간다.")
         elif chained:
             print(f"다음 milestone: {chained['milestone_id']} — {chained['plan_path']}")
             print("  승인 이력 확인됨 — marker 를 active 로 켜고 approve_harness_plan.py 로 등록한 뒤 실행한다.")
@@ -940,9 +1305,12 @@ def main() -> int:
                     + ", ".join(sorted(unapproved))
                     + " — 자동 연쇄 대상이 아니다. /harness-plan 승인 게이트로."
                 )
-        return 0 if chained else 1
+        if not chained:
+            return 1
+        return 3 if chained["status"] == "needs-plan" else 0
     if args.command == "require-approval":
-        ok, message = require_approval(args.root)
+        token = normalize_session_token(args.session, args.runtime) or env_session_token(args.runtime)
+        ok, message = require_approval(args.root, token, args.work_id, args.runtime)
         print(message)
         return 0 if ok else 1
     if args.command == "resume":
@@ -952,6 +1320,18 @@ def main() -> int:
             return 1
         ok, message = resume_work(args.root, args.work_id, token)
         print(message)
+        if ok:
+            # M23 step-5 실측: 연쇄로 넘겨받은 세션이 started·close-old 를 잊었다 — 여기서 기계적으로.
+            # 단 영수증이 어긋나면 started 를 보내지 않는다(D8 ③ — 예전 세션이 열린 채 남아 보고한다).
+            approved, why = require_approval(args.root, token, args.work_id, args.runtime)
+            if not approved:
+                print(f"연쇄 넘기기: started 보류 — 승인 영수증 불일치: {why}")
+                return 1
+            import chain_handoff
+
+            acts = chain_handoff.on_resume(str(args.root), args.work_id)
+            if acts:
+                print("연쇄 넘기기: " + " · ".join(acts))
         return 0 if ok else 1
     if args.command == "diagnose":
         token = normalize_session_token(args.session, args.runtime) or env_session_token(args.runtime)
@@ -960,6 +1340,8 @@ def main() -> int:
             print(json.dumps(verdict, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             print(f"[{verdict['reason']}] {verdict['message']}")
+            for line in verdict.get("approvals") or []:
+                print(line)
         return 0 if verdict["reason"] == "ok" else 1
     report = build_status(args.root)
     if args.json:

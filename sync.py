@@ -39,28 +39,19 @@ SOURCES = [
             "promoted/harness-done",
             "promoted/harness-bootstrap",
             "promoted/session-end",
-            "promoted/session-log",
         ],
         "promoted/",
         "",
     ),
     (
-        # 부트스트랩 엔진 — init 스크립트와 갈래 스켈레톤은 scripts/ 아래,
-        # cascade 템플릿(PLAN/REPORT)은 스크립트의 `$SCRIPT_DIR/../templates`
-        # 해석에 맞춰 스킬 루트 templates/ 아래. 두 층을 다 채워야 한다 —
-        # 한 층만 채우면 부트스트랩이 set -e 로 즉사한다(구 SYNC 실사고).
+        # 부트스트랩 엔진 — init 스크립트와 갈래 스켈레톤(PLAN/REPORT 포함)은
+        # scripts/ 아래 한 곳이다(2026-09 harness-engineering → agent-orchestration/harness
+        # 흡수로 templates/ 층이 scripts/templates/workflow/ 로 합쳐졌다).
         "engine-scripts",
-        HOME / "projects/harness-engineering",
-        ["scripts/init-ai-readiness.sh", "scripts/templates"],
-        "scripts/",
+        HOME / "projects/agent-orchestration",
+        ["harness/scripts/init-ai-readiness.sh", "harness/scripts/templates"],
+        "harness/scripts/",
         "harness-bootstrap/scripts/",
-    ),
-    (
-        "engine-templates",
-        HOME / "projects/harness-engineering",
-        ["templates/PLAN_TEMPLATE.md", "templates/REPORT_TEMPLATE.md"],
-        "",
-        "harness-bootstrap/",
     ),
 ]
 
@@ -71,6 +62,17 @@ EXCLUDE = {
     "harness-run/scripts/sync_stop_gate.py",     # 텔레그램 동기 정지 relay
     "harness-run/scripts/test_sync_stop_gate.py",
     "session-end/bin/update_evidence_ledger.sh", # 개인 중앙 evidence 레포 collector
+    "harness-run/scripts/fanout.py",             # 사적 Orca 의존
+    "harness-run/scripts/test_fanout.py",
+    "harness-run/scripts/test_harvest_worktree.py",
+    # 아래는 위 셋과 같은 사유(사적 Orca 의존)로 임시 제외 — 공개 여부는 사용자 결정 대기
+    "harness-run/scripts/harvest_worktree.py",   # orca 탭 정리 호출
+    "harness-run/scripts/launch_session.py",     # orca 새 세션 발사
+    "harness-run/scripts/test_launch_session.py",
+    "harness-run/scripts/chain_handoff.py",      # orca 탭 교대
+    "harness-run/scripts/test_chain_handoff.py",
+    "session-end/bin/data_repos.py",             # 개인 데이터 레포(kg·ts·vault) 점검
+    "session-end/tests/test_data_repos.py",
 }
 # 접두사 단위 제외 — 디렉터리째 개인 자산인 것
 EXCLUDE_PREFIX = (
@@ -83,123 +85,63 @@ EXCLUDE_PREFIX = (
 P = [
     # harness-plan: 개인 위임 규약 참조 → 일반화
     ("harness-plan/SKILL.md",
-     r"운용 정본 → `~/projects/agent-orchestration/context/delegation\.md` 를 위임 결정 전 Read\.",
-     "위임 규약은 자기 런타임의 서브에이전트 문서를 따른다.", 1),
-    # harness-plan: 부트스트랩 경로 → 번들 경로
+     r"\(`~/projects/agent-orchestration/context/delegation\.md` 모델 선택 표\)",
+     "(자기 런타임의 서브에이전트 규약 — 모델 선택 표)", 1),
+    # harness-plan: Codex 어댑터 packet 경로 → 일반화
     ("harness-plan/SKILL.md",
-     r"bash ~/projects/harness-engineering/scripts/init-ai-readiness\.sh",
-     "bash ~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh", 1),
-    # harness-plan: orca 스폰 옵트인 줄 삭제
-    ("harness-plan/SKILL.md",
-     r"\n\s*- \*orca 스폰 경로\(옵트인\)\*[^\n]*", "", 1),
-    # harness-plan: 실행 위치 3택(M17·M21 어휘화)의 워크트리 스폰 항 삭제 + orca 발사 문구 일반화 → 공개판은 2택(ㄱㄱ/새로ㄱ 수동)
-    ("harness-plan/SKILL.md",
-     r" / `스폰ㄱ` 워크트리 스폰\(`spawn_chain\.py` 1커맨드 — orca 옵트인\)", "", 1),
-    ("harness-plan/SKILL.md",
-     r"`새로ㄱ` 새 세션\(등록·커밋 후 orca 로 새 세션 발사\+\"이어가\" 주입, 이 세션은 session-end — orca 불가면 발사 생략 폴백, 새 세션은 수동으로 열고 \"이어가\"\)",
-     "`새로ㄱ` 새 세션(등록·커밋 후 이 세션은 마감 — 새 세션을 열고 \"이어가\"로 이어받는다)", 1),
-    ("harness-plan/SKILL.md",
-     r"\*\*실행 위치 3택 = 승인 어휘\*\* \(M17 2026-08-14 · M21 2026-08-15 어휘화\)", "**실행 위치 = 승인 어휘** (M21 2026-08-15)", 1),
-    # harness-plan: 새로ㄱ 절차(orca 발사 시퀀스) 통삭제 — 공개판은 수동 새 세션
-    ("harness-plan/SKILL.md",
-     r"\n\s*- \*\*새로ㄱ 절차 \(M21 2026-08-15\)\*\*[^\n]*", "", 1),
-    # harness-plan: 답의 의미의 새로ㄱ·스폰ㄱ 서술 공개화
-    ("harness-plan/SKILL.md",
-     r"\*\*`새로ㄱ`\*\* = 승인 등록\+`docs\(plan\):` 커밋까지 마친 뒤 \*\*아래 「새로ㄱ 절차」로 새 세션을 발사하고 이 세션은 session-end 전체 마감\*\* · \*\*`스폰ㄱ`\*\* = `spawn_chain\.py` 워크트리 스폰\(orca 옵트인\)\.",
-     "**`새로ㄱ`** = 승인 등록+`docs(plan):` 커밋까지 마친 뒤 이 세션을 마감 — 새 세션을 열고 \"이어가\"로 이어받는다.", 1),
-    ("harness-plan/SKILL.md",
-     r"`새로ㄱ`/`스폰ㄱ` 는 각자의 절차가 종착점이다\(M21\)", "`새로ㄱ` 는 그 절차가 종착점이다(M21)", 1),
-    ("harness-plan/SKILL.md",
-     r"\(ㄱㄱ — 새 세션이면 새로ㄱ·워크트리면 스폰ㄱ\)", "(ㄱㄱ — 새 세션이면 새로ㄱ)", 1),
-    # (구 규칙 은퇴 2026-08-22: "새로ㄱ·스폰ㄱ 를 권고 한 줄로" anchor 는 D7 2026-08-20 재작성으로 소멸 —
-    #  현행 권고 문장은 새로ㄱ 만 언급해 공개판 그대로 통과)
-    # harness-run: fan-out·워커 배차 절(M18·M23) 통삭제 — fanout.md 는 제외 목록, 포인터 절도 공개판에서 소거
-    ("harness-run/SKILL.md",
-     r"## fan-out·워커 배차 \(배차 설계 절이 있는 계획 — M18 2026-08-14 · M23 2026-08-22 확장\)\n[\s\S]*?(?=^## 막힘 사다리)",
+     r", packet 은 `agent-orchestration/harness/scripts/codex_spawn_adapter\.py`",
      "", 1),
-    # harness-run: 이어받기 절차(M17)의 3택 언급 일반화
-    ("harness-run/SKILL.md",
-     r" 실행 위치 3택\(같은 턴 `ㄱㄱ`·새 세션 `새로ㄱ` — 자동 발사든 수동이든·워크트리 스폰 `스폰ㄱ`\)의 어느 경로로 와도 이 계약은 같다\(M21 어휘화 2026-08-15\)\.",
-     " 어느 경로로 와도 이 계약은 같다.", 1),
-    # harness-run: 사다리 2단 위임 규약 참조 → 일반화
-    ("harness-run/SKILL.md",
-     r"\(운용 규약 `~/projects/agent-orchestration/context/delegation\.md` — model 명시 필수\)",
-     "(자기 런타임의 서브에이전트 규약을 따른다 — model 명시 필수)", 1),
-    # harness-run: 사다리 3단 텔레그램 동기 정지 → 평문 질문 정지
-    ("harness-run/SKILL.md",
-     r"\| \*\*3\*\* \| \*\*동기 정지 → 사용자\(텔레그램\)\*\*[^\n]*\|",
-     "| **3** | **정지 → 사용자에게 평문 질문** — 지금까지 모은 근거와 함께 한 문장으로 묻고 답을 기다린다 |", 1),
-    ("harness-run/SKILL.md",
-     r"\*\*3단은 동기다(?:[^\n]*\n)*?[^\n]*telegram_resume_relay\.py[^\n]*\n?",
-     "", 1),
-    # harness-run: 공유 레포 예시명 일반화
-    ("harness-run/SKILL.md",
-     r"\(`custom-skills`·`harness-engineering`·`second-brain` 등 하네스 공유 레포\)",
-     "(여러 세션이 함께 쓰는 레포)", 1),
-    # harness-done: 개인 총괄 수집기 문장 일반화 (마커 불변 경고 자체는 보존)
-    ("harness-done/SKILL.md",
-     r"\*\*형식 정본은 부트스트랩이 실제로 찍는 것\*\*: `harness-engineering/scripts/init-ai-readiness\.sh` 의 ROADMAP 스켈레톤\. ⚠ \*\*태그명과 필드 키워드를 바꾸지 않는다\*\* — `agent-orchestration/scripts/portfolio_status\.py` 가 22개 레포의 이 마커를 긁어 총괄 뷰를 만들고, 이름이 바뀌면 예외 없이 조용히 빈 결과를 낸다\(2026-07-23 실측\)\.",
-     "**형식 정본은 부트스트랩이 실제로 찍는 것**: 번들 `init-ai-readiness.sh` 의 ROADMAP 스켈레톤. ⚠ **태그명과 필드 키워드를 바꾸지 않는다** — 이 마커를 파싱하는 도구는 이름이 바뀌면 예외 없이 조용히 빈 결과를 낸다.", 1),
-    # session-end / session-log: 저널 경로 env 화 + 개인 vault 명칭 제거
-    ("session-end/bin/session-log.py",
-     r'Path\.home\(\) / "vault" / "40-Logs"',
-     'Path(os.environ.get("HARNESS_JOURNAL_DIR", str(Path.home() / "harness-journal")))', 1),
-    ("session-log/bin/session-log.py",
-     r'Path\.home\(\) / "vault" / "40-Logs"',
-     'Path(os.environ.get("HARNESS_JOURNAL_DIR", str(Path.home() / "harness-journal")))', 1),
-    ("session-end/bin/session-log.py", r"^(import .*\n)", r"import os\n\1", 1),
-    ("session-log/bin/session-log.py", r"^(import .*\n)", r"import os\n\1", 1),
-    ("session-end/bin/session-log.py", r"~/vault/40-Logs", "$HARNESS_JOURNAL_DIR", 1),
-    ("session-log/bin/session-log.py", r"~/vault/40-Logs", "$HARNESS_JOURNAL_DIR", 1),
-    # session-log.py 양쪽: 개인 기기명 서사·매핑 일반화
-    ("session-end/bin/session-log.py",
-     r"\n    2026-07-29 수리:[\s\S]*?실측 호스트명:[^\n]*\n",
-     "\n    hostname 을 라벨로 매핑하고, 미등재 기기는 호스트명을 그대로 보여준다.\n", 1),
-    ("session-log/bin/session-log.py",
-     r"\n    2026-07-29 수리:[\s\S]*?실측 호스트명:[^\n]*\n",
-     "\n    hostname 을 라벨로 매핑하고, 미등재 기기는 호스트명을 그대로 보여준다.\n", 1),
-    ("session-end/bin/session-log.py", r'\("Macmini", "M4"\)', '("Macmini", "Mac mini")', 1),
-    ("session-log/bin/session-log.py", r'\("Macmini", "M4"\)', '("Macmini", "Mac mini")', 1),
-    ("session-end/bin/session-log.py",
-     r'\n    # WSL 이 아닌 진짜 Linux 도 "M4" 로[\s\S]*?재발한다\.\n', "\n", 1),
-    ("session-log/bin/session-log.py",
-     r'\n    # WSL 이 아닌 진짜 Linux 도 "M4" 로[\s\S]*?재발한다\.\n', "\n", 1),
-    ("session-end/SKILL.md", r"`?~/vault/40-Logs(/YYYY-MM-DD\.md)?`?",
-     "`$HARNESS_JOURNAL_DIR`", 1),
-    ("session-log/SKILL.md", r"`?~/vault/40-Logs(/YYYY-MM-DD\.md)?`?",
-     "`$HARNESS_JOURNAL_DIR`", 1),
-    ("session-end/SKILL.md", r"vault 40-Logs", "저널", 1),
-    ("session-log/SKILL.md", r"vault 40-Logs", "저널", 1),
-    # session-end: 개인 지식 시스템(kg·ts·sb) 절과 개인 evidence collector 절 제거
-    ("session-end/SKILL.md",
-     r"## 2-b\. 지식 승격 후보 인입[\s\S]*?(?=^## 3\.)", "", 1),
-    ("session-end/SKILL.md",
-     r"## 3\. harness evidence ledger 갱신[\s\S]*?(?=^## 4\.)", "", 1),
-    ("session-end/SKILL.md", r"## 4\. 출력", "## 3. 출력", 1),
-    ("session-end/SKILL.md", r"\bvault\b", "저널", 1),
-    ("session-log/SKILL.md", r"\bvault\b", "저널", 0),
-    # harness-bootstrap: 엔진 탐색 사슬 재작성 — 공개판은 스크립트를 번들하므로
-    # 번들 경로가 1순위, 외부 체크아웃($HARNESS_ENGINEERING_ROOT)은 opt-in 폴백 (step-2)
-    ("harness-bootstrap/SKILL.md",
-     r"핵심 로직: harness-engineering `scripts/init-ai-readiness\.sh` \(Codex·CI 등 어디서든 호출 가능\)\. 경로는 §3 의 해석 사슬로 찾는다 — `\$HARNESS_ENGINEERING_ROOT` → `~/projects/…` → 형제 디렉터리\.",
-     "핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$HARNESS_ENGINEERING_ROOT`(opt-in).", 1),
-    ("harness-bootstrap/SKILL.md",
-     r'"\$HARNESS_ENGINEERING_ROOT/scripts/init-ai-readiness\.sh"\s+"\$HOME/projects/harness-engineering/scripts/init-ai-readiness\.sh"\s+"\$\(git rev-parse --show-toplevel 2>/dev/null\)/\.\./harness-engineering/scripts/init-ai-readiness\.sh"',
-     '"$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "${HARNESS_ENGINEERING_ROOT:-/nonexistent}/scripts/init-ai-readiness.sh"', 1),
-    ("harness-bootstrap/SKILL.md",
-     r"init-ai-readiness\.sh 를 못 찾았다 — harness-engineering 체크아웃 경로를 HARNESS_ENGINEERING_ROOT 로 지정하라",
-     "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라", 1),
-    # harness-bootstrap: design-pack 은 공개판 미포함 — 참조에 표기
-    ("harness-bootstrap/SKILL.md",
-     r"\| `--add design` \| design-pack `DESIGN\.md` \+ lint hook \|",
-     "| `--add design` | design-pack `DESIGN.md` + lint hook (⚠ 이 배포판 미포함 — 없으면 명시적으로 실패) |", 1),
-    ("harness-bootstrap/SKILL.md",
-     r"웹 디자인은 `--add design` 시 design-pack\(`harness-bootstrap/design-pack/`\) `minimal` family 가 `DESIGN\.md`\+lint hook 을 설치한다\.",
-     "웹 디자인 design-pack 은 이 배포판에 포함되지 않는다 — `--add design` 은 팩이 없으면 명시적으로 실패한다.", 1),
     # harness-plan elicit 출처 줄: 개인 레포 경로 제거 (외부 원저작 표기는 보존)
     ("harness-plan/references/elicit.md",
-     r"\(2026-07-24 열람, harness-engineering `references/harness/fn-opt-dryforge/`\)",
+     r"\(2026-07-24 열람, agent-orchestration `harness/`\)",
      "(2026-07-24 열람)", 1),
+    # harness-run: 단독 배차 하한 정본 경로 → 일반화
+    ("harness-run/SKILL.md",
+     r"정본 `~/projects/agent-orchestration/context/delegation\.md` 「단독 배차 하한」",
+     "자기 런타임의 서브에이전트 규약", 1),
+    # harness-run: 공유 레포 예시명 일반화
+    ("harness-run/SKILL.md",
+     r"\*\*공유 레포\(custom-skills·agent-orchestration 등\)에서는",
+     "**공유 레포(여러 세션이 함께 쓰는 레포)에서는", 1),
+    # harness-done: 마커 정본 경로 일반화 (마커 불변 경고 자체는 보존)
+    ("harness-done/SKILL.md",
+     r"`agent-orchestration/harness/scripts/init-ai-readiness\.sh` 가 찍는 것이 정본",
+     "번들 `init-ai-readiness.sh` 가 찍는 것이 정본", 1),
+    # harness-bootstrap: 엔진 탐색 사슬 재작성 — 공개판은 스크립트를 번들하므로
+    # 번들 경로가 1순위, 외부 체크아웃($AO_ROOT)은 opt-in 폴백
+    ("harness-bootstrap/SKILL.md",
+     r"핵심 로직: `harness/scripts/init-ai-readiness\.sh`\(구 h-e\) \(Codex·CI 등 어디서든 호출 가능\)\. 경로는 §3 의 해석 사슬로 찾는다 — `\$AO_ROOT`\(기본 `~/projects/agent-orchestration`\) → 형제 디렉터리\.",
+     "핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$AO_ROOT`(opt-in).", 1),
+    ("harness-bootstrap/SKILL.md",
+     r'AO_ROOT="\$\{AO_ROOT:-\$HOME/projects/agent-orchestration\}"\n',
+     'AO_ROOT="${AO_ROOT:-/nonexistent}"\n', 1),
+    ("harness-bootstrap/SKILL.md",
+     r'for c in "\$AO_ROOT/harness/scripts/init-ai-readiness\.sh" "\$\(git rev-parse --show-toplevel 2>/dev/null\)/\.\./agent-orchestration/harness/scripts/init-ai-readiness\.sh"; do',
+     'for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do', 1),
+    ("harness-bootstrap/SKILL.md",
+     r"init-ai-readiness\.sh 를 못 찾았다 — agent-orchestration 체크아웃 경로를 AO_ROOT 로 지정하라",
+     "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라", 1),
+    # harness-bootstrap: 개인 디자인 스킬 참조 제거
+    ("harness-bootstrap/SKILL.md",
+     r"웹 화면 디자인은 팩이 아니라 `/askewly-design` 스킬이 받는다\(design-pack 은 2026-09-21 은퇴 — 공식 DESIGN\.md 스펙과 불일치한 채 8/6 부터 STALE 이었다\)\.",
+     "웹 화면 디자인은 팩이 아니라 별도 디자인 스킬의 몫이다.", 1),
+    # harness-done: 개인 vault 경로 조각 제거
+    ("harness-done/bin/retire_check.py", r'"40-Logs/", ', "", 1),
+    # 워크트리 규약 문서 이름(orca.md) 일반화 — 주석·메시지 문자열만
+    ("harness-run/scripts/check_worktree_scope.py", r"`?orca\.md`?(?= §)", "워크트리 규약", 3),
+    ("harness-run/scripts/roadmap_sync.py", r"orca\.md(?= §)", "워크트리 규약", 2),
+    # session-end: Orca 프로젝트 그룹 서사 일반화
+    ("session-end/bin/roadmap_parse.py", r"Orca 프로젝트 그룹으로", "다른 계층 정본으로", 1),
+    # session-end: 개인 데이터 레포 점검 절(§2)과 Orca 새 세션 발사 절(§3b) 제거
+    ("session-end/SKILL.md",
+     r"## 2\. 데이터 레포 점검[\s\S]*?(?=^## 3\.)", "", 1),
+    ("session-end/SKILL.md",
+     r"## 3b\. 새 세션 발사[\s\S]*?(?=^## 4\.)", "", 1),
+    # session-end: 저널 경로 env 화 + 개인 vault 명칭 제거
+    ("session-end/SKILL.md", r"`?~/vault/40-Logs(/YYYY-MM-DD\.md)?`?",
+     "`$HARNESS_JOURNAL_DIR`", 1),
+    ("session-end/SKILL.md", r"vault 40-Logs", "저널", 1),
+    ("session-end/SKILL.md", r"\bvault\b", "저널", 1),
 ]
 
 # 전 파일 공통 마무리 치환 — 파일별 규칙이 놓친 서사적 언급을 일반화한다.
@@ -207,6 +149,7 @@ GLOBAL_P = [
     (r"harness-engineering", "the-source-repo"),
     (r"agent-orchestration", "the-orchestration-repo"),
     (r"second-brain", "the-notes-repo"),
+    (r"askewly-(?:command|precon|security)[a-z-]*", "a-private-repo"),
     (r"/mnt/c/Users/[A-Za-z0-9_]+", "/mnt/c/Users/<you>"),
     (r"[Cc]:\\+Users\\+[A-Za-z0-9_]+", r"C:\\Users\\<you>"),
     (r"/Users/[A-Za-z0-9_]+/", "/Users/<you>/"),
@@ -223,6 +166,7 @@ LEAK_PATTERNS = [
     r"harness-engineering",
     r"agent-orchestration",
     r"second-brain",
+    r"askewly-(?:command|precon|security)",
     r"telegram",
     r"\borca\b|\bOrca\b",
     r"~/vault|40-Logs|\"vault\"",

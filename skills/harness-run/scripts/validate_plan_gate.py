@@ -23,7 +23,7 @@ DECISION_HEADING = re.compile(r"^##\s+(?:결정 로그|Decision Log)\b.*$", re.M
 DECISION_STATUS = re.compile(r"^\s*-\s*status:\s*(resolved|none-required)\s*$", re.M | re.I)
 UNRESOLVED = re.compile(r"^\s*-\s*(?:status:\s*unresolved|unresolved:|pending-decision:|미해결:|결정 필요:)", re.M | re.I)
 # M7 D1·D4 (2026-08-20): 전역 스캔 어휘에서 bare `PLACEHOLDER` 를 뺐다 — 코퍼스 실측
-# (the-source-repo/evidence/2026-08-20-m7-plan-corpus-before.json)에서 히트 60 중
+# (the-orchestration-repo/harness/evidence/2026-08-20-m7-plan-corpus-before.json)에서 히트 60 중
 # 54 가 UI 서술의 평범한 명사였고, 한국어 계획서가 미기입을 그 단어로 적는 관행은 0건.
 # leaf 필드 값 검사(면제 없는 자리)만 6종 전부를 본다 — 전역용/필드용 정규식 분리(D4).
 PLACEHOLDER = re.compile(r"\b(?:TBD|TODO|FIXME|미정|추후\s*결정)\b", re.I)
@@ -99,6 +99,8 @@ def leaf_headings(text: str) -> list["re.Match[str]"]:
 
 
 # CS6 step-2 (2026-07-17): 범용화 — 코어 3(별칭 허용) + 자기선언 도메인 + 제외 자기점검.
+# 2026-09-30 사용자 결정(r6-plan-methodology R1): 코어 3 은 더 이상 필수가 아니다 — 실측상 검증 70%·SoT 78% 가
+#   leaf Files/Verify 의 재진술이었다. 적혀 있으면 빈 값·「해당 없음」 사유는 여전히 검사한다. 자기선언 도메인 + 검토 후 제외는 유지.
 # 구 "작업 유형 enum + 고정 도메인" plan 은 legacy 모드로 그대로 PASS (하위호환 자동 감지).
 CORE_DOMAINS = {
     "source-of-truth": ["source-of-truth", "정본"],
@@ -115,7 +117,7 @@ def _needs_reason(errors: list[str], domain: str, value: str) -> None:
 
 
 def validate_scaffold(text: str) -> list[str]:
-    """스캐폴딩 결정 완전성: 신형 = 코어 3 + 자기선언 전부 채움 + 제외 자기점검 / 구형 = 유형별 고정 도메인."""
+    """스캐폴딩 결정 완전성: 신형 = 자기선언 도메인 전부 채움 + 제외 자기점검(코어 3 은 선택, 있으면 내용 검사) / 구형 = 유형별 고정 도메인."""
     errors: list[str] = []
     heading = SCAFFOLD_HEADING_RE.search(text)
     if heading is None:
@@ -137,15 +139,17 @@ def validate_scaffold(text: str) -> list[str]:
             _needs_reason(errors, domain, line.group(1))
         return errors
 
-    # 신형 (범용) 모드 — 유형 선언 불요, 코어 3 필수
+    # 신형 (범용) 모드 — 유형 선언 불요. 코어 3 은 선택(2026-09-30): 적혀 있으면 빈 값만 잡는다.
     for core, aliases in CORE_DOMAINS.items():
         line = None
         for alias in aliases:
             line = re.search(rf"^[ \t]*-[ \t]*{re.escape(alias)}[ \t]*:[ \t]*(.*)$", section, re.M)
             if line:
                 break
-        if line is None or not line.group(1).strip():
-            errors.append(f"scaffolding core domain missing or empty: {core} (별칭: {'/'.join(aliases)})")
+        if line is None:
+            continue
+        if not line.group(1).strip():
+            errors.append(f"scaffolding core domain present but empty: {core}")
             continue
         _needs_reason(errors, core, line.group(1))
     # 자기선언 도메인 전부 채움 (섹션 안 모든 `- name:` bullet)
@@ -420,7 +424,7 @@ def derive_waves(text: str) -> list[list[str]]:
 
 # ── 배차 설계 (2026-08-14 M18 step-1 · 2026-08-22 M23 step-7 확장) ───────────
 # 선택(opt-in) 절 — 절이 없으면 무검사(기존 계획 무영향). 있으면 문법·실재·모순을 검사한다.
-# 행 문법: `- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <경로/커맨드>`
+# 행 문법: `- step-N · inline|researcher|worker(<model>[, <effort>]) · 격리 none|worktree · 검증 <경로/커맨드>`
 # 근거 줄: `- 근거: <배차 이득 — 파일 격리|독립 시각|컨텍스트 격리|벽시계 단축|단가 중 ≥1>`
 # 계획 모델 줄(M23): `- 계획 모델: <model>` — 워커 모델 상한(≤ 계획 모델)의 대조 기준.
 #   sonnet 이 계획하며 opus 워커를 부리는 역전 차단(2026-08-22 사용자). 발효일 이후
@@ -428,7 +432,7 @@ def derive_waves(text: str) -> list[list[str]]:
 # 배차 이득·워커/검증자 계약의 정본은 delegation.md — 여기는 문법과 그래프 모순만 본다.
 DISPATCH_HEADING_RE = re.compile(r"^##[ \t]+배차 설계.*$", re.M)
 DISPATCH_ROW_RE = re.compile(
-    r"^[ \t]*-[ \t]*(?P<id>step-\d+)[ \t]*·[ \t]*(?P<mode>inline|worker\((?P<model>[^)]*)\))"
+    r"^[ \t]*-[ \t]*(?P<id>step-\d+)[ \t]*·[ \t]*(?P<mode>inline|researcher|worker\((?P<model>[^),]*)(?:,[ \t]*(?P<effort>[^)]*))?\))"
     r"[ \t]*·[ \t]*격리[ \t]+(?P<iso>none|worktree)[ \t]*·[ \t]*검증[ \t]+(?P<verify>.+)$"
 )
 DISPATCH_STEP_BULLET_RE = re.compile(r"^[ \t]*-[ \t]*step-\d+\b.*$", re.M)
@@ -437,6 +441,11 @@ DISPATCH_GAINS = ("파일 격리", "독립 시각", "컨텍스트 격리", "벽�
 DISPATCH_PLAN_MODEL_RE = re.compile(r"^[ \t]*-[ \t]*계획 모델[ \t]*:[ \t]*(\S+)", re.M)
 DISPATCH_MODEL_RANK = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
 DISPATCH_MODEL_CAP_SINCE = "2026-08-22"
+DISPATCH_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+# 동시 집합 ≥2 이면 배차 절 필수 (2026-09-30 사용자 확정). 구 opt-in 은 실측 69% 가
+# inline 만 적어 절이 형식이 됐고, 오케스트레이터+병렬 워커가 실행 모델이 되지 못했다.
+# 발효일 이후 생성된 계획서만 — 기존 문서는 기록으로 동결.
+DISPATCH_REQUIRED_SINCE = "2026-09-30"
 
 
 def _leaf_dependency_edges(text: str) -> dict[str, list[str]]:
@@ -455,9 +464,252 @@ def _leaf_dependency_edges(text: str) -> dict[str, list[str]]:
     return edges
 
 
+# M34 D5 (2026-09-21): 계획서가 주장한 검증 대상이 실재하는가.
+# "Verify: `pytest scripts/test_foo.py`" 라고 적어 놓고 그 파일이 없으면, 계획은
+# *돌지 않는 검증*을 약속한 것이고 run 은 그 자리에서 빈손이 된다. 승인 전에만 본다 —
+# 승인 후 재검증에서 켜면 이미 승인된 계획이 뒤늦게 막힌다.
+#
+# 오탐이 나면 이 게이트는 죽는다(계획서마다 빨간불이면 사람이 무시한다). 그래서 토큰
+# 조건을 좁게 잡았다: `/` 를 **포함하고 동시에** 알려진 확장자로 끝나는 토큰만 경로로 본다.
+# 검증자 실측(2026-09-21): 느슨한 초안 규칙은 최근 계획서 3건에서 21·24·4건 오탐이었다.
+VERIFY_PATH_SUFFIXES = (".py", ".sh", ".md", ".json", ".toml", ".yaml")
+VERIFY_TOKEN_STRIP = "`'\"(),.;·—…[]"
+# 공백만으로는 못 가른다: 한국어 계획서는 `A`·`B`, 소스↔`C` 처럼 구분자를 붙여 쓴다.
+VERIFY_TOKEN_SPLIT = re.compile(r"[\s`·,、()\[\]↔→…]+")
+VERIFY_VAR_PREFIXES = ("$HARNESS_SCRIPTS/", "$HARNESS_ROOT/")
+FILES_FIELD_RE = re.compile(r"^[ 	]*-[ 	]*(?:Files|파일|Surfaces|Artifact|산출물)[ 	]*:[ 	]*(.*)$", re.M | re.I)
+
+
+def _verify_path_tokens(value: str) -> list[str]:
+    """Verify 값에서 '실재를 주장하는 경로' 만 추린다. 판단 불가는 전부 버린다."""
+    tokens: list[str] = []
+    for raw in VERIFY_TOKEN_SPLIT.split(value):
+        token = raw.strip(VERIFY_TOKEN_STRIP)
+        if not token or "/" not in token:
+            continue
+        if not token.endswith(VERIFY_PATH_SUFFIXES):
+            continue
+        if token.startswith(("http://", "https://")):
+            continue
+        if "<" in token or ">" in token:
+            continue  # <파일> 자리표시자
+        if any(ch in token for ch in "*?{}"):
+            continue  # glob — 실재 주장이 아니다
+        if ":" in token:
+            continue  # `git show rev:path` · 드라이브 문자
+        if "$" in token and not token.startswith(VERIFY_VAR_PREFIXES):
+            continue  # 해석 규칙이 없는 변수
+        tokens.append(token)
+    return tokens
+
+
+def _normalize_declared(token: str) -> str:
+    """Verify 토큰과 `Files:` 토큰을 같은 자로 재기 위한 정규화."""
+    token = token.replace("\\", "/")
+    for prefix in ("$HARNESS_ROOT/", "./"):
+        if token.startswith(prefix):
+            token = token[len(prefix):]
+    return token
+
+
+def _declared_paths(text: str) -> set[str]:
+    """`Files:`/`Artifact:` 가 선언한 경로 집합.
+
+    Verify 와 **같은 토크나이저**로 뽑아 토큰 단위로 대조한다. 부분 문자열 대조는
+    `other/scripts/x.py` 선언 하나가 `scripts/x.py` 주장까지 면제했다(2026-09-22).
+    """
+    declared: set[str] = set()
+    for match in FILES_FIELD_RE.finditer(text):
+        for token in _verify_path_tokens(match.group(1)):
+            declared.add(_normalize_declared(token))
+    return declared
+
+
+def _resolve_verify_token(token: str, root: Path, home: Path) -> Path:
+    if token.startswith("$HARNESS_SCRIPTS/"):
+        tail = token[len("$HARNESS_SCRIPTS/"):]
+        for base in (home / ".claude" / "skills" / "harness-run" / "scripts",
+                     home / ".codex" / "skills" / "harness-run" / "scripts"):
+            if (base / tail).exists():
+                return base / tail
+        return home / ".claude" / "skills" / "harness-run" / "scripts" / tail
+    if token.startswith("$HARNESS_ROOT/"):
+        return root / token[len("$HARNESS_ROOT/"):]
+    if token.startswith("~/"):
+        return home / token[2:]
+    path = Path(token)
+    return path if path.is_absolute() else root / token
+
+
+def validate_verify_targets(text: str, root: Path) -> list[str]:
+    """`Verify:` 가 가리키는 파일이 실재하는가. (`Failure probe:` 는 대상 아님 —
+    부재 경로를 일부러 적는 자리다.)
+
+    예외: 이 계획서의 어느 leaf 가 `Files:`/`Artifact:` 로 **같은 경로를** 선언했으면
+    "이번에 만든다"는 뜻이므로 통과시킨다. 대조는 토큰 단위다 — 부분 문자열이면
+    상위 경로가 다른 동명 파일까지 함께 면제된다.
+    """
+    home = Path.home()
+    declared = _declared_paths(text)
+    errors: list[str] = []
+    seen: set[str] = set()
+    for match in VERIFY_LINE.finditer(text):
+        for token in _verify_path_tokens(match.group(1)):
+            if token in seen:
+                continue
+            seen.add(token)
+            if _normalize_declared(token) in declared:
+                continue  # 이 계획이 만드는 파일
+            if _resolve_verify_token(token, root, home).exists():
+                continue
+            errors.append(
+                f"Verify 가 실재하지 않는 경로를 가리킨다: {token} "
+                "— 이 step 이 만드는 파일이면 `Files:`/`Artifact:` 에 적는다. "
+                "교차 레포는 `~/projects/<레포>/…` 로"
+            )
+    return errors
+
+
+def plan_repo_root(plan_path: Path) -> Path:
+    """계획서가 놓인 레포 루트(`.git` 이 있는 조상). 못 찾으면 계획서의 부모."""
+    resolved = plan_path.resolve()
+    for parent in resolved.parents:
+        if (parent / ".git").exists():
+            return parent
+    return resolved.parent
+
+
+# ── 갈래 목록 (2026-11-18 M26 step-3) ────────────────────────────────────────
+# 펼치는 계획: 메인 계획서는 갈래 목록과 통합 검증만 갖는다. 갈래마다 워크트리 세션이 뜬다.
+# 생성일 FANOUT_RULE_SINCE 이후 계획서만 검사한다 — 옛 계획서의 승인 해시를 깨지 않는다
+# (소급 없음, 생성일 게이팅). 같은 날짜로 배차 행의 `격리 worktree` 도 거부한다: 워크트리는
+# 「사용자와 대화할 갈래」 하나로 통일했고, 파일이 겹치는 무인 작업은 순차로 돌린다.
+# 행 문법: `- <갈래 id> · <제목> · 완료 기준: <한 줄> · 소유: <경로·글롭 쉼표 목록>`
+#   갈래 id = [a-z0-9-]+ (브랜치가 `<milestone id 소문자>-<갈래 id>` 가 된다).
+#   제목·완료 기준·소유 값에는 구분자 `·` 를 쓰지 않는다.
+#   `- 펼침 판정:` 줄은 행이 아니라 판정 기록이다(셋 다 참일 때만 펼침).
+FANOUT_RULE_SINCE = "2026-11-18"
+FANOUT_HEADING_RE = re.compile(r"^##[ \t]+갈래 목록.*$", re.M)
+FANOUT_BULLET_RE = re.compile(r"^[ \t]*-[ \t]+(?!펼침 판정\b).*$", re.M)
+FANOUT_ROW_RE = re.compile(
+    r"^[ \t]*-[ \t]+(?P<id>[a-z0-9-]+)[ \t]*·[ \t]*(?P<title>[^·\s][^·\n]*?)[ \t]*·"
+    r"[ \t]*완료 기준[ \t]*:[ \t]*(?P<done>[^·\s][^·\n]*?)[ \t]*·"
+    r"[ \t]*소유[ \t]*:[ \t]*(?P<owns>[^·\s][^·\n]*?)[ \t]*$"
+)
+FANOUT_ROW_HINT = "`- <갈래 id> · <제목> · 완료 기준: <한 줄> · 소유: <경로·글롭 쉼표 목록>` (갈래 id 는 [a-z0-9-]+)"
+_ISOLATION_WORKTREE_RULE = "2026-11-18"
+
+
+def _created_on_or_after(text: str, since: str) -> bool:
+    created = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
+    return created is not None and created.group(1) >= since
+
+
+def _fanout_section(text: str) -> str | None:
+    """`## 갈래 목록` 절 본문(없으면 None). 코드 펜스 안의 예시 제목은 절로 읽지 않는다."""
+    fenceless = CODE_FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    heading = FANOUT_HEADING_RE.search(fenceless)
+    if heading is None:
+        return None
+    tail = fenceless[heading.end():]
+    return re.split(r"^##\s+", tail, maxsplit=1, flags=re.M)[0]
+
+
+def _norm_own(item: str) -> str:
+    """소유 항목을 비교용으로 정규화한다 — 백틱·역슬래시·`./`·끝 `/`·끝 `/**`·`/*` 를 걷는다."""
+    item = item.strip().strip("`").replace("\\", "/")
+    while item.startswith("./"):
+        item = item[2:]
+    for suffix in ("/**", "/*"):
+        if item.endswith(suffix):
+            item = item[: -len(suffix)]
+    item = item.rstrip("/")
+    if item in ("**", "*", "."):
+        return ""
+    m = re.search(r"[*?\[]", item)
+    if m:  # 첫 글롭 문자 앞의 정적 접두 디렉터리가 범위(없으면 레포 전체)
+        item = item[: m.start()].rpartition("/")[0]
+    return item
+
+
+def _own_overlap(a: str, b: str) -> bool:
+    """같은 항목이거나 한쪽이 다른 쪽의 접두 경로면 겹친다(`scripts` 와 `scripts/x.py`).
+    정규화 뒤 빈 값은 레포 전체라 무엇과도 겹친다."""
+    if a == "" or b == "":
+        return True
+    return a == b or b.startswith(a + "/") or a.startswith(b + "/")
+
+
+def parse_fanout_rows(text: str) -> list[tuple[str, str, str, list[str]]]:
+    """문법에 맞는 갈래 행만 (id, 제목, 완료 기준, 소유 목록) 으로 돌려준다."""
+    section = _fanout_section(text)
+    if section is None:
+        return []
+    rows: list[tuple[str, str, str, list[str]]] = []
+    for line_m in FANOUT_BULLET_RE.finditer(section):
+        m = FANOUT_ROW_RE.match(line_m.group(0))
+        if m:
+            owns = [o.strip() for o in m.group("owns").split(",") if o.strip()]
+            rows.append((m.group("id"), m.group("title"), m.group("done"), owns))
+    return rows
+
+
+def validate_fanout(text: str) -> list[str]:
+    """`## 갈래 목록` 절 검사. 절이 없거나 생성일이 발효일 앞이면 무검사."""
+    if not _created_on_or_after(text, FANOUT_RULE_SINCE):
+        return []
+    section = _fanout_section(text)
+    if section is None:
+        return []
+    errors: list[str] = []
+    rows: list[tuple[str, str, str, list[str]]] = []
+    for line_m in FANOUT_BULLET_RE.finditer(section):
+        line = line_m.group(0)
+        m = FANOUT_ROW_RE.match(line)
+        if not m:
+            errors.append(f"갈래 행이 문법 밖이다: {line.strip()[:70]} — {FANOUT_ROW_HINT}")
+            continue
+        owns = [o.strip() for o in m.group("owns").split(",") if o.strip()]
+        if not owns:
+            errors.append(f"갈래 {m.group('id')}: 소유 목록이 비었다 — {FANOUT_ROW_HINT}")
+            continue
+        rows.append((m.group("id"), m.group("title"), m.group("done"), owns))
+    seen_ids: set[str] = set()
+    for gid, *_rest in rows:
+        if gid in seen_ids:
+            errors.append(f"갈래 id 중복: {gid}")
+        seen_ids.add(gid)
+    if len(rows) < 2:
+        errors.append(
+            f"갈래가 둘 미만이다({len(rows)}) — 갈래가 둘 이상일 때만 펼친다. "
+            "아니면 `## 갈래 목록` 절을 지우고 단일 계획으로 간다"
+        )
+    for i in range(len(rows)):
+        for j in range(i + 1, len(rows)):
+            (ga, _ta, _da, owns_a), (gb, _tb, _db, owns_b) = rows[i], rows[j]
+            if ga == gb:
+                continue
+            for oa in owns_a:
+                for ob in owns_b:
+                    if _own_overlap(_norm_own(oa), _norm_own(ob)):
+                        errors.append(
+                            f"갈래 소유가 겹친다: {ga} 의 `{oa}` ↔ {gb} 의 `{ob}` — "
+                            "소유는 미리 갈라야 한다(같은 항목이거나 한쪽이 다른 쪽의 접두 경로)"
+                        )
+    return errors
+
+
 def validate_dispatch(text: str) -> list[str]:
     heading = DISPATCH_HEADING_RE.search(text)
+    created_m = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
+    required = bool(created_m) and created_m.group(1) >= DISPATCH_REQUIRED_SINCE
+    multi = [w for w in (derive_waves(text) if required else []) if len(w) >= 2]
     if heading is None:
+        if multi:
+            return [
+                f"동시 가능 leaf 가 있는데(wave: {' '.join(multi[0])}) `## 배차 설계` 절이 없다 — "
+                "병렬 워커 배차가 기본이다(2026-09-30). 절을 쓰거나 Dependencies 로 순차임을 밝힌다"
+            ]
         return []
     errors: list[str] = []
     tail = text[heading.end():]
@@ -470,12 +722,21 @@ def validate_dispatch(text: str) -> list[str]:
         if not m:
             errors.append(
                 f"배차 행이 문법 밖이다: {line.strip()[:70]} — "
-                "`- step-N · inline|worker(<model>) · 격리 none|worktree · 검증 <경로>`"
+                "`- step-N · inline|researcher|worker(<model>[, <effort>]) · 격리 none|worktree · 검증 <경로>`"
             )
             continue
         sid = m.group("id")
+        if m.group("iso") == "worktree" and _created_on_or_after(text, _ISOLATION_WORKTREE_RULE):
+            errors.append(
+                f"배차 행 {sid}: `격리 worktree` 는 {_ISOLATION_WORKTREE_RULE} 이후 계획서에서 거부한다 — "
+                "워크트리는 사용자와 대화하는 갈래(`## 갈래 목록`)에만 쓴다. 파일이 겹치는 무인 작업은 "
+                "순차로, 아니면 `격리 none`"
+            )
         if m.group("mode").startswith("worker") and not (m.group("model") or "").strip():
             errors.append(f"배차 행 {sid}: worker 에 model 이 없다 — worker(<model>) 로 명시한다")
+        effort = (m.groupdict().get("effort") or "").strip().lower()
+        if effort and effort not in DISPATCH_EFFORTS:
+            errors.append(f"배차 행 {sid}: effort 미상 {effort} — {'|'.join(DISPATCH_EFFORTS)} 중 하나로 적는다")
         if sid not in leaf_ids:
             errors.append(f"배차 행이 실재하지 않는 leaf 를 가리킨다: {sid}")
         if sid in rows:
@@ -527,6 +788,13 @@ def validate_dispatch(text: str) -> list[str]:
     # 순차 의존 leaf 의 병렬(worker) 선언 차단 — worker 로 지정된 두 leaf 사이에
     # 의존 경로가 있으면 Dependencies 파생 동시 집합과 모순이다.
     workers = [sid for sid, m in rows.items() if m.group("mode").startswith("worker") and sid in leaf_ids]
+    # 2026-09-30: 다른 wave 의 워커끼리는 순차가 정상이다(wave 2 워커 → wave 3 워커).
+    # 같은 wave 안에서 의존이 있는 쌍만 잡는다 — 옛 규칙은 첫 실전(the-notes-repo M40)에서
+    # 7 leaf 계획의 정상 배차를 4건 FAIL 로 막았다.
+    wave_of = {}
+    for i, w in enumerate(derive_waves(text)):
+        for sid in w:
+            wave_of[sid] = i
     if len(workers) >= 2:
         edges = _leaf_dependency_edges(text)
 
@@ -546,23 +814,35 @@ def validate_dispatch(text: str) -> list[str]:
         for i in range(len(workers)):
             for j in range(i + 1, len(workers)):
                 a, b = workers[i], workers[j]
+                if wave_of and wave_of.get(a) != wave_of.get(b):
+                    continue  # 다른 wave — 순차 실행이 정상
                 if reachable(a, b) or reachable(b, a):
                     errors.append(
                         f"순차 의존 leaf 를 병렬 worker 로 선언했다: {a} ↔ {b} — "
                         "의존이 있는 쪽을 inline 으로 내리거나 배차 행을 지운다"
                     )
+    # wave 커버리지 (2026-09-30): 부모는 한 wave 에서 leaf 하나까지만 inline 으로 잡는다.
+    for w in multi:
+        wrk = [s for s in w if s in rows and rows[s].group("mode") != "inline"]
+        if len(wrk) < len(w) - 1:
+            errors.append(
+                f"wave {' '.join(w)} 에 worker 행이 {len(wrk)}개 — 부모 inline 은 wave 당 leaf 하나까지, "
+                "나머지는 worker(<model>) 행으로(2026-09-30)"
+            )
     return errors
 
 
 # 계획 수치의 출처 (2026-07-21). 계기: 계획 전제 오류 5건이 전부 정본 대신
 # 파생 지표(grep 수치·구버전 스키마·기억·잘린 화면)로 단정한 데서 났다.
-# 규약 정본: the-source-repo/docs/measurement-provenance.md
+# 규약 정본: the-orchestration-repo/docs/harness/measurement-provenance.md
 # 적용 범위는 **DoD·통합 검증에 쓰인 수치**뿐이다 — 서술 속 배경 수치는 대상 아님.
 # 발효일. 이날 이후 생성된 plan 만 검사한다 — 기존 문서는 기록으로 동결.
 MEASUREMENT_RULE_SINCE = "2026-07-22"
 DOD_LINE_RE = re.compile(r"^-\s*(?:\*\*)?(?:DoD|통합 검증)(?:\*\*)?\s*[:：](.+)$", re.M)
 PROVENANCE_HEADING_RE = re.compile(r"^##[ 	]+수치 출처", re.M)
-_DATEISH_RE = re.compile(r"\d{4}-\d{2}-\d{2}|v?\d+\.\d+")
+# 압축 날짜(20260922-slug)는 changeset 디렉터리명이다 — 수치 주장이 아니라 식별자.
+# 하이픈이 뒤따를 때만 지운다(단독 8자리 수치는 계속 검사 대상).
+_DATEISH_RE = re.compile(r"\d{4}-\d{2}-\d{2}|(?<!\d)\d{8}(?=-)|v?\d+\.\d+")
 
 
 def validate_measurement_provenance(text: str) -> list[str]:
@@ -583,7 +863,7 @@ def validate_measurement_provenance(text: str) -> list[str]:
         errors.append(
             "DoD/통합 검증에 수치 " + ", ".join(sorted(set(targets))[:4])
             + " 가 있는데 '## 수치 출처' 절이 없다 — 그 수치를 낸 커맨드를 적는다 "
-            "(the-source-repo/docs/measurement-provenance.md)"
+            "(the-orchestration-repo/docs/harness/measurement-provenance.md)"
         )
         return errors
     section = text.split("## 수치 출처", 1)[1]
@@ -593,8 +873,35 @@ def validate_measurement_provenance(text: str) -> list[str]:
     return errors
 
 
-def validate(text: str, pre_approval: bool = False) -> list[str]:
-    """계획 게이트 검사. `pre_approval=True` 는 **Status 값 판정 하나만** 면제한다.
+# 되돌리기 어려운 동작의 명시 선언 (2026-08-29, h-e M28 O2 — OpenSpec `retire_capabilities`
+# 패턴 이식). 계기: M28 계획의 라이브 배포 게이트(사용자 소유·롤백 어려움)를 fresh
+# 검증자(B2)는 잡았는데 이 게이트는 못 잡았다 — "롤백 불가 side-effect 는 실행 전 승인"
+# 이 문장 규칙으로만 있었기 때문. 계획서가 스스로 선언하게 하고 **존재만** 기계 검사한다
+# (없음/목록의 내용 판단은 승인자 몫 — 능력 대리형 검사 금지, ADR 0008).
+# 발효일 이후 생성된 plan 만 검사한다 — 기존 문서는 기록으로 동결(생성일 게이팅 5번째).
+DESTRUCTIVE_RULE_SINCE = "2026-08-29"
+DESTRUCTIVE_LINE_RE = re.compile(r"^-\s*(?:\*\*)?되돌리기 어려운 동작(?:\*\*)?\s*[:：]", re.M)
+
+
+def validate_destructive_declaration(text: str) -> list[str]:
+    created = re.search(r"^>\s*생성:\s*(\d{4}-\d{2}-\d{2})", text, re.M)
+    if created is None or created.group(1) < DESTRUCTIVE_RULE_SINCE:
+        return []
+    if DESTRUCTIVE_LINE_RE.search(text):
+        return []
+    return [
+        "'- 되돌리기 어려운 동작:' 선언 줄이 없다 — 「run 전 scope 결정」에 `없음` 또는 "
+        "목록(항목별 실행 전 승인 경로)을 적는다. 라이브 배포·삭제·외부 발송·크리덴셜 변경이 "
+        "여기 해당한다 (h-e M28 O2, changesets/20260828-m28-trend-absorption)"
+    ]
+
+
+def validate(text: str, pre_approval: bool = False, plan_path: Path | None = None) -> list[str]:
+    """계획 게이트 검사.
+
+    `pre_approval=True` 는 두 가지를 한다: **Status 값 판정 하나를 면제**하고,
+    **Verify 실재 검사를 켠다**(M34 D5 — `plan_path` 가 있어야 돈다. 승인 후
+    재검증에서는 꺼져 있어, 이미 승인된 계획이 뒤늦게 막히지 않는다).
 
     승인 전 계획서는 정의상 draft 라 게이트가 항상 빨갛고, 그래서 "Status 하나만 남고
     통과했다"는 판정에 사람이 매번 끼었다(M6 D3). 면제 경계 셋:
@@ -647,9 +954,15 @@ def validate(text: str, pre_approval: bool = False) -> list[str]:
         if not block:
             continue
         body = block.group(1)
+        # 2026-09-21 절차 다이어트(사용자 결정): `Risk: 없음` leaf 는 `Failure probe` 면제 —
+        # 기록만 만드는 leaf 의 negative-path 는 억지 문장이 된다. 다른 등급·미기재는 그대로 필수.
+        risk_hit = RISK_FIELD_RE.search(body)
+        risk_value = parse_risk_value(risk_hit.group(1))[0] if risk_hit else None
         for field, pattern in LEAF_FIELDS.items():
             match = pattern.search(body)
             if match is None:
+                if field == "Failure probe" and risk_value == "없음":
+                    continue
                 errors.append(f"step lacks required field {field}: {leaf}")
             elif not match.group(1).strip():
                 errors.append(f"step field {field} is empty: {leaf}")
@@ -697,7 +1010,9 @@ def validate(text: str, pre_approval: bool = False) -> list[str]:
         )
 
     errors.extend(validate_measurement_provenance(text))
+    errors.extend(validate_destructive_declaration(text))
     errors.extend(validate_dispatch(text))
+    errors.extend(validate_fanout(text))
 
     supersedes = SUPERSEDES.search(text)
     if supersedes is not None and not supersedes.group(1).strip():
@@ -722,6 +1037,8 @@ def validate(text: str, pre_approval: bool = False) -> list[str]:
             errors.append("decision log must declare '- status: resolved' or '- status: none-required'")
         if UNRESOLVED.search(body):
             errors.append("decision log contains an unresolved decision")
+    if pre_approval and plan_path is not None:
+        errors.extend(validate_verify_targets(text, plan_repo_root(plan_path)))
     return errors
 
 
@@ -732,11 +1049,12 @@ def main() -> int:
     parser.add_argument(
         "--pre-approval",
         action="store_true",
-        help="승인 전 계획서 점검 — Status 값 판정만 면제한다(줄 부재·다른 검사는 그대로 FAIL)",
+        help="승인 전 계획서 점검 — Status 값 판정을 면제하고 Verify 실재 검사를 켠다"
+             "(줄 부재·다른 검사는 그대로 FAIL)",
     )
     args = parser.parse_args()
     text = args.plan.read_text(encoding="utf-8", errors="replace")
-    errors = validate(text, pre_approval=args.pre_approval)
+    errors = validate(text, pre_approval=args.pre_approval, plan_path=args.plan)
     risk_tally = validate_risk(text)[1]
     result = {"status": "pass" if not errors else "fail", "plan": str(args.plan), "errors": errors}
     if args.pre_approval:
@@ -746,7 +1064,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        mode = " [pre-approval — Status 값 판정 면제]" if args.pre_approval else ""
+        mode = " [pre-approval — Status 값 판정 면제 · Verify 실재 검사 켬]" if args.pre_approval else ""
         print(f"plan gate: {result['status'].upper()}{mode} ({args.plan})")
         if risk_tally:
             summary = " · ".join(f"{k} {v}" for k, v in sorted(risk_tally.items()))

@@ -15,12 +15,13 @@ CHR_NL = chr(10)
 
 
 def make_report(path: Path, *, empty_evidence: bool = False, no_smoke: bool = False,
-                harvest: str | None = "없음") -> None:
+                harvest: str | None = "없음", audit: str | None = "none — 조건 미해당") -> None:
     evidence = "" if empty_evidence else (
         "- changesets/20260721-hq3-report-template · changesets/20260721-hq3-ledger-derivation\n"
         "- pytest scripts -q PASS\n"
         + ("" if no_smoke else "- 실표면: 배포된 report_close 를 실보고서로 구동 — 3-event 파생 관측\n")
         + "- 재현: python report_close.py <report> --task-id T1 --root .\n"
+        + ("" if audit is None else f"- 감사: {audit}\n")
         + ("" if harvest is None else f"- 수확: {harvest}\n")
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,7 +121,8 @@ def test_missing_surface_smoke_refused(tmp_path: Path) -> None:
 
 def test_placeholder_template_refused(tmp_path: Path) -> None:
     # 템플릿 원본( placeholder {} 그대로 )은 거부돼야 한다
-    template = Path(__file__).resolve().parents[1] / "templates" / "REPORT_TEMPLATE.md"
+    # 2026-09-21: 템플릿 정본은 harness-done 스킬 디렉터리(harness-run 의 고아 사본은 제거)
+    template = Path(__file__).resolve().parents[2] / "harness-done" / "templates" / "REPORT_TEMPLATE.md"
     report = tmp_path / "r.md"
     report.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
     make_work(tmp_path)
@@ -207,7 +209,7 @@ def test_none_surface_smoke_is_not_a_side_effect_claim():
 
 def test_real_reports_in_this_repo_still_close():
     """정합 상태 오탐 0 — 오늘 쓴 완료 보고 3건이 새 게이트를 통과해야 한다."""
-    root = Path.home() / "projects" / "the-source-repo" / "archive" / "reports"
+    root = Path.home() / "projects" / "the-orchestration-repo" / "harness" / "archive" / "reports"
     if not root.is_dir():
         return
     checked = 0
@@ -254,7 +256,7 @@ def test_unverified_declaration_is_accepted():
 
 def test_real_reports_still_pass_unverified_gate():
     """정합 상태 오탐 0 — 이 레포의 최근 완료 보고가 새 게이트를 통과해야 한다."""
-    root = Path.home() / "projects" / "the-source-repo" / "archive" / "reports"
+    root = Path.home() / "projects" / "the-orchestration-repo" / "harness" / "archive" / "reports"
     if not root.is_dir():
         return
     checked = 0
@@ -270,13 +272,12 @@ def test_real_reports_still_pass_unverified_gate():
 # ── M6 step-1: kg 수확 후보를 검사 가능한 대상으로 (2026-08-20) ───────────────
 # 누락은 규율 문제가 아니라 **관측 가능성** 문제였다 — 빠뜨려도 보고서가 정상으로 닫혔다.
 
-def test_missing_harvest_line_refused(tmp_path: Path) -> None:
+def test_missing_harvest_line_passes(tmp_path: Path) -> None:
+    # 2026-09-21 절차 다이어트: `수확:` 은 선택 — 없어도 닫힌다(구 test_missing_harvest_line_refused 반전).
     report = tmp_path / "archive" / "reports" / "r.md"
     make_report(report, harvest=None)
     make_work(tmp_path)
-    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)])
-    assert rc == 1
-    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) == 0
 
 
 def test_harvest_help_states_full_format() -> None:
@@ -360,3 +361,202 @@ def test_harvest_exemption_requires_the_colon() -> None:
     """`수확:` 예외가 OI3 게이트의 우회로가 되면 안 된다."""
     body = "- 수확물 정리: 측정 불가" + CHR_NL
     assert "평가하지 못한 검사" in report_close.unevaluable_error(body, "ok (exit 0)")
+
+
+# ── ADR 0015 §6: `감사:` 는 `실표면:`·`재현:` 과 같은 강도의 거부 대상 (2026-09-22) ──────
+# 마감 감사 자리를 세운 것만으로는 생략이 보이지 않는다 — 안 돌린 마감도 사유를 적어야 닫힌다.
+
+def test_missing_audit_line_refused(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, audit=None)
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) != 0
+
+
+def test_audit_none_with_reason_passes(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, audit="none — 스폰 조건 미해당")
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) == 0
+
+
+def test_audit_placeholder_refused(tmp_path: Path) -> None:
+    """템플릿 표식이 그대로면 판정을 안 한 것이다 — 채운 것으로 통과시키지 않는다."""
+    report = tmp_path / "archive" / "reports" / "r.md"
+    make_report(report, audit="{마감 감사자 지적 n건과 처분}")
+    make_work(tmp_path)
+    assert report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)]) != 0
+
+
+# ── M24 step-1 (2026-11-03): 중단(dropped) 종결 ─────────────────────────────
+def make_drop_report(path: Path, *, reason: str = "서면평가 미선발로 대회 진행이 끝났다.\n- 근거: 주최 측 결과 메일 2026-11-02") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# 중단 노트 — 테스트\n\n"
+        f"## 1. 중단 사유\n{reason}\n\n"
+        "## 2. 동결 산출물\n- submissions/ 제출본 (커밋 abc123)\n\n"
+        "## 3. 재개 조건\n다음 회차 공고가 나면 새 milestone 으로.\n",
+        encoding="utf-8",
+    )
+
+
+def test_drop_records_task_dropped_only(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    work = make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"])
+    assert rc == 0
+    events = read_events(tmp_path)
+    assert [e["event"] for e in events] == ["task_dropped"]
+    assert events[0]["task_id"] == "T1"
+    assert events[0]["basis"] == "주최 측 결과 메일 2026-11-02"
+    state = json.loads(work.read_text(encoding="utf-8"))
+    assert state["works"]["T1"]["status"] == "dropped"
+
+
+def test_drop_without_work_records_milestone(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    rc = report_close.main([str(report), "--task-id", "M9", "--milestone-id", "M9",
+                            "--root", str(tmp_path), "--drop"])
+    assert rc == 0
+    events = read_events(tmp_path)
+    assert [e["event"] for e in events] == ["task_dropped"]
+    assert events[0]["milestone_id"] == "M9"
+    assert not (tmp_path / ".harness" / "work.json").exists()
+
+
+def test_drop_rejects_missing_reason(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report, reason="")
+    make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"])
+    assert rc != 0
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_drop_rejects_missing_basis_line(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report, reason="외부 결과로 접는다.")
+    make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"])
+    assert rc != 0
+
+
+def test_completion_path_rejects_drop_note(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path)])
+    assert rc != 0
+
+
+def test_drop_rejects_placeholder_reason_with_basis(tmp_path: Path) -> None:
+    # 감사 지적 1: 근거만 채우고 사유는 템플릿 그대로면 거부한다
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report, reason="{무엇 때문에 접나 — 한두 문장}\n- 근거: 주최 측 메일")
+    make_work(tmp_path)
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"])
+    assert rc != 0
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_drop_rejects_completed_work(tmp_path: Path) -> None:
+    # 감사 지적 2: 이미 완료된 work 를 dropped 로 덮지 않는다
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    work = make_work(tmp_path)
+    state = json.loads(work.read_text(encoding="utf-8"))
+    state["works"]["T1"]["status"] = "completed"
+    work.write_text(json.dumps(state), encoding="utf-8")
+    rc = report_close.main([str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"])
+    assert rc != 0
+    assert json.loads(work.read_text(encoding="utf-8"))["works"]["T1"]["status"] == "completed"
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_drop_rejects_completed_roadmap_marker(tmp_path: Path) -> None:
+    # work 가 없어도 ROADMAP 마커가 completed 면 ledger 를 쓰기 전에 거부한다
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    (tmp_path / "ROADMAP.md").write_text('<!-- harness:milestone id="M9" status="completed" -->\n', encoding="utf-8")
+    rc = report_close.main([str(report), "--task-id", "M9", "--root", str(tmp_path), "--drop"])
+    assert rc != 0
+    assert not (tmp_path / ".harness" / "execution-ledger.jsonl").exists()
+
+
+def test_drop_twice_appends_once(tmp_path: Path) -> None:
+    report = tmp_path / "archive" / "reports" / "d.md"
+    make_drop_report(report)
+    make_work(tmp_path)
+    args = [str(report), "--task-id", "T1", "--root", str(tmp_path), "--drop"]
+    assert report_close.main(args) == 0
+    assert report_close.main(args) == 0
+    assert [e["event"] for e in read_events(tmp_path)] == ["task_dropped"]
+
+
+def test_audit_and_review_lines_naming_unevaluable_condition_pass():
+    """`감사: none — …` 에 스폰 조건 이름(「평가 못 함」)을 적어도 거부되지 않는다 (2026-11-16 — 문구 함정 제거)."""
+    body = (
+        "- 검증: pytest 12 passed\n"
+        "- 감사: none — 장치 신설·교차 레포·위험 leaf·평가 못 함 모두 해당 없음\n"
+        "- 리뷰: 정확성 2건 반영, 평가 못 함 없음\n"
+    )
+    assert report_close.unevaluable_error(body, "none — 내부") == ""
+    # 다른 줄의 미평가 신호는 여전히 잡는다
+    assert report_close.unevaluable_error(body + "- 실측: 평가 못 함\n", "none — 내부") != ""
+
+
+# --- M28 step-3: 스위트 기록 덮음 판정 -----------------------------------------------------------
+
+def _git(root: Path, *args: str) -> str:
+    import subprocess
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+        check=True, capture_output=True, text=True,
+    ).stdout
+
+
+def _commit_file(root: Path, rel: str, body: str = "x") -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    _git(root, "add", rel)
+    _git(root, "commit", "-qm", rel)
+
+
+def _repo_with_pass_record(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    _commit_file(root, "a.py")
+    head = _git(root, "rev-parse", "HEAD").strip()
+    (root / ".harness").mkdir()
+    (root / ".harness" / "suite-gate.json").write_text(json.dumps(
+        {"status": "pass", "head": head, "command": "pytest -q", "dirty": 0, "dirty_tracked": 0}), encoding="utf-8")
+    return root
+
+
+def test_suite_record_accepted_after_record_only_commit(tmp_path: Path) -> None:
+    root = _repo_with_pass_record(tmp_path)
+    _commit_file(root, "archive/reports/n.md")
+    _commit_file(root, "plans/p.md")
+    error, summary = report_close.suite_gate_check(root, "")
+    assert error is None
+    assert summary == "스위트 통과: pytest -q (dirty 0) — 기록 커밋 뒤 기록 파일 2개만 변경"
+
+
+def test_suite_record_rejected_after_source_commit(tmp_path: Path) -> None:
+    root = _repo_with_pass_record(tmp_path)
+    _commit_file(root, "plans/p.md")
+    _commit_file(root, "src/b.py")
+    error, summary = report_close.suite_gate_check(root, "")
+    assert summary is None
+    assert "스위트 기록이 다른 커밋의 것이다(" in error
+    assert "기록 커밋 뒤 기록 파일 밖이 바뀌었다: src/b.py" in error
+    assert "다시 돌린다: python " in error
+
+
+def test_suite_record_same_commit_summary_unchanged(tmp_path: Path) -> None:
+    root = _repo_with_pass_record(tmp_path)
+    assert report_close.suite_gate_check(root, "") == (None, "스위트 통과: pytest -q (dirty 0)")

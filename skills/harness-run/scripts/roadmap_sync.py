@@ -152,7 +152,7 @@ def find_blocks(lines: list[str]) -> list[MarkerBlock]:
 # 처럼 완료·미완이 섞여 사는 미분류 섹션은 건드리지 않는다(레포마다 관습이 다르다).
 IN_PROGRESS_HEADING_RE = re.compile(r"Active|Pending|Next|진행|대기|후보", re.I)
 
-# 종결 status. 정본은 `the-orchestration-repo/scripts/portfolio_status.py` 의
+# 종결 status. 정본은 `session-end/bin/roadmap_parse.py` 의
 # TERMINAL_STATUSES 이고 여기 리터럴은 그 사본이다 — 이 스크립트는 플릿 전체가
 # 공유하므로 외부 레포 절대경로에 하드 의존하지 않는다. 두 집합이 어긋나면
 # `promoted/session-end/tests/test_roadmap_hygiene.py` 의 동치 테스트가 잡는다.
@@ -422,7 +422,16 @@ def complete(args: argparse.Namespace) -> int:
     path = Path(args.roadmap)
     lines = read_lines(path)
     blocks = find_blocks(lines)
-    block = next((b for b in blocks if b.milestone_id == args.milestone), None)
+    # ⚠ **중복 ID 면 닫지 않는다** (2026-09-03 리뷰). 종전엔 첫 매치를 닫아서 「어느 블록을
+    # 닫을지 운」이었다 — 오늘 실제로 M28 이 둘인 상태로 이 명령이 돌았고 맞은 것을 닫은 게
+    # 우연이었다. 탐지를 lint(관찰자)에만 두면 사고 경로가 그대로 열려 있다.
+    same_id = [b for b in blocks if b.milestone_id == args.milestone]
+    if len(same_id) > 1:
+        print(f"duplicate milestone id: `{args.milestone}` — {len(same_id)}개 블록이 같은 번호다. "
+              "어느 것을 닫을지 정해지지 않으므로 거부한다. 살아있는 쪽 번호를 옮긴 뒤 다시 실행한다 "
+              "(워크트리 규약 §2.5 ① 번호 선점). 진단: `roadmap_sync.py lint`", file=sys.stderr)
+        return 1
+    block = same_id[0] if same_id else None
     if block is None:
         print(f"milestone not found: {args.milestone}", file=sys.stderr)
         return 1
@@ -433,7 +442,9 @@ def complete(args: argparse.Namespace) -> int:
     if prior not in {"active", "completed"} and not getattr(args, "force", False):
         print(
             f"거부: {args.milestone} 의 현재 status 는 '{prior}' 다 — 완료로 덮지 않는다.\n"
-            f"  막힌·보류 중인 milestone 을 닫는 것은 사람의 판단이다. 의도한 것이면 --force 를 준다.",
+            f"  막힌·보류 중인 milestone 을 닫는 것은 사람의 판단이다. 의도한 것이면 --force 를 준다.\n"
+            f"  마커 status 허용 값: active(진행 중·계획 승인 시점) · pending · blocked · completed · skipped · dropped · archived "
+            f"(in_progress 는 값이 아니다 — active 로 고친다).",
             file=sys.stderr,
         )
         return 1
@@ -473,6 +484,63 @@ def complete(args: argparse.Namespace) -> int:
 
     write_lines(path, lines)
     print(f"completed {args.milestone}")
+    if moved:
+        print(f"  배치 이동: {', '.join(moved)} → ## {section}")
+    return 0
+
+
+DROPPED_BY_RE = re.compile(r"^- Dropped by:\s*")
+
+
+def drop(args: argparse.Namespace) -> int:
+    """milestone 을 폐기(dropped)로 닫고 종결 섹션으로 옮긴다. completed 는 거부, dropped 는 멱등."""
+    path = Path(args.roadmap)
+    lines = read_lines(path)
+    blocks = find_blocks(lines)
+    same_id = [b for b in blocks if b.milestone_id == args.milestone]
+    if len(same_id) > 1:
+        print(f"duplicate milestone id: `{args.milestone}` — {len(same_id)}개 블록이 같은 번호다. "
+              "어느 것을 폐기할지 정해지지 않으므로 거부한다. 진단: `roadmap_sync.py lint`",
+              file=sys.stderr)
+        return 1
+    if not same_id:
+        print(f"milestone not found: {args.milestone}", file=sys.stderr)
+        return 1
+    block = same_id[0]
+
+    prior = block.attrs.get("status", "pending")
+    if prior == "completed":
+        print(f"거부: {args.milestone} 는 이미 completed 다 — 완료된 것을 폐기로 덮지 않는다.",
+              file=sys.stderr)
+        return 1
+    if prior == "dropped":
+        print(f"already dropped: {args.milestone} (변화 없음)")
+        return 0
+
+    new_attrs = dict(block.attrs)
+    new_attrs["status"] = "dropped"
+    new_attrs["evidence"] = args.evidence
+
+    new_block = list(block.lines)
+    new_block[0] = marker_line(new_attrs)
+    new_block = replace_or_append(new_block, STATUS_RE, "- Status: [x] DROP")
+    new_block = replace_or_append(new_block, DROPPED_BY_RE, f"- Dropped by: {args.reason}")
+    new_block = replace_or_append(new_block, EVIDENCE_RE, f"- Evidence: {args.evidence}")
+
+    lines = lines[: block.start] + new_block + lines[block.end :]
+
+    before = lines
+    lines, moved, section, skipped = relocate_terminal(lines, only={args.milestone})
+    for mid, why in skipped:
+        print(f"  배치 이동 건너뜀: {mid} — {why}", file=sys.stderr)
+    if moved:
+        problem = _selfcheck(before, lines)
+        if problem:
+            print(f"거부: 배치 이동 자기검사 실패라 쓰지 않았다 — {problem}", file=sys.stderr)
+            return 1
+
+    write_lines(path, lines)
+    print(f"dropped {args.milestone}")
     if moved:
         print(f"  배치 이동: {', '.join(moved)} → ## {section}")
     return 0
@@ -590,6 +658,37 @@ def _cross_repo_resolves(pointer: str, projects_root: Path | None = None) -> boo
     return pointer.startswith("projects/") and (root.parent / pointer).is_file()
 
 
+def _dangling_matches(
+    roadmap: Path, lines: list[str], projects_root: Path | None = None
+):
+    """(path, text, match) — 끊긴 포인터의 **원소별 위치**. 탐지 규칙 단일 구현.
+
+    `lint`(보고)와 `repair-plan-pointers`(치환)가 같은 함수를 쓴다. 사본을 두면
+    "고쳤는데 lint 가 계속 FAIL" 또는 그 반대가 조용히 생긴다.
+    """
+    root = roadmap.resolve().parent
+    for path in pointer_scan_files(roadmap):
+        text = "\n".join(lines) if path == roadmap.resolve() else path.read_text(encoding="utf-8")
+        fence_spans, append_spans = _pointer_exempt_spans(text)
+        for match in PLAN_POINTER_RE.finditer(text):
+            pointer = match.group(1)
+            if (root / pointer).is_file():
+                continue
+            start, end = match.span(1)
+            if any(a <= start and end <= b for a, b in fence_spans):
+                continue  # 펜스 안 = 인용 (필드 리드인 예시 포함 — 펜스가 우선)
+            line_start = text.rfind("\n", 0, start) + 1
+            line_end = text.find("\n", start)
+            line = text[line_start: line_end if line_end != -1 else len(text)]
+            if _POINTER_FIELD_RE.match(line):
+                pass  # 사용 표면 — append-only 절 안에서도 필드가 우선
+            elif any(a <= start and end <= b for a, b in append_spans):
+                continue  # append-only 절의 산문 = 사후 기록
+            elif _cross_repo_resolves(pointer, projects_root):
+                continue  # 다른 레포로 실재 해석 = 언급
+            yield path, text, match
+
+
 def dangling_plan_pointers(
     roadmap: Path, lines: list[str], projects_root: Path | None = None
 ) -> list[str]:
@@ -605,29 +704,115 @@ def dangling_plan_pointers(
     root = roadmap.resolve().parent
     missing: list[str] = []
     seen: set[str] = set()
-    for path in pointer_scan_files(roadmap):
-        text = "\n".join(lines) if path == roadmap.resolve() else path.read_text(encoding="utf-8")
+    for path, _text, match in _dangling_matches(roadmap, lines, projects_root):
+        pointer = match.group(1)
+        if pointer in seen:
+            continue
+        seen.add(pointer)
         label = path.relative_to(root).as_posix() if path != roadmap.resolve() else roadmap.name
-        fence_spans, append_spans = _pointer_exempt_spans(text)
-        for match in PLAN_POINTER_RE.finditer(text):
-            pointer = match.group(1)
-            if (root / pointer).is_file() or pointer in seen:
-                continue
-            start, end = match.span(1)
-            if any(a <= start and end <= b for a, b in fence_spans):
-                continue  # 펜스 안 = 인용 (필드 리드인 예시 포함 — 펜스가 우선)
-            line_start = text.rfind("\n", 0, start) + 1
-            line_end = text.find("\n", start)
-            line = text[line_start: line_end if line_end != -1 else len(text)]
-            if _POINTER_FIELD_RE.match(line):
-                pass  # 사용 표면 — append-only 절 안에서도 필드가 우선
-            elif any(a <= start and end <= b for a, b in append_spans):
-                continue  # append-only 절의 산문 = 사후 기록
-            elif _cross_repo_resolves(pointer, projects_root):
-                continue  # 다른 레포로 실재 해석 = 언급
-            seen.add(pointer)
-            missing.append(f"{label}: {pointer}")
+        missing.append(f"{label}: {pointer}")
     return missing
+
+
+def _label_for(roadmap: Path, path: Path) -> str:
+    root = roadmap.resolve().parent
+    return path.relative_to(root).as_posix() if path != roadmap.resolve() else roadmap.name
+
+
+def archive_candidate(root: Path, pointer: str) -> str | None:
+    """끊긴 포인터의 아카이브 사본 (M8 D3 우선순위 — 첫 히트만 채택).
+
+    `archive/<pointer>` → `archive/plans/<basename>` 순. 어느 쪽도 없으면 None 이고,
+    그때는 **경로를 지어내지 않는다** — 소멸 포인터에 추정 주소를 쓰는 것은 기록 위조다.
+    """
+    for candidate in (f"archive/{pointer}", f"archive/plans/{Path(pointer).name}"):
+        if (root / candidate).is_file():
+            return candidate
+    return None
+
+
+def repair_plan_pointers(args: argparse.Namespace) -> int:
+    """끊긴 plan 백링크를 아카이브 사본으로 갱신한다 (2026-09-02).
+
+    **왜 있나 — 규칙 두 개가 부딪치고 있었다.** milestone 을 닫으면 계획서가
+    `archive/plans/` 로 이동하는데, `harness-done` 산문은 "옛 백링크는 정정하지
+    않는다"(record 동결)고 적고 `lint` 는 ROADMAP 마커의 `- Plan:` 을 **사용
+    표면**(살아있는 재개 경로)으로 보고 실재를 요구한다(M8 D2). 그래서 **milestone 을
+    닫을 때마다 lint 가 FAIL** 했고, 그 발견이 고쳐지지 않은 채 HANDOFF 로 이월되며
+    세션마다 같은 노이즈가 반복됐다(2026-09-02 M9 실측 — M8 step-4 가 플릿 178건을
+    청소한 지 12일 만에 같은 자리가 재오염됐다). record 동결의 대상은 archive 안의
+    옛 문서 본문이지 살아있는 ROADMAP 마커가 아니다.
+
+    탐지는 `_dangling_matches` 를 그대로 쓴다 — lint 와 **다른 판정을 할 수 없는**
+    구조다. 치환은 매치 스팬 단위로만 하고(펜스·append-only 산문의 같은 문자열은
+    애초에 탐지에 안 걸리므로 손대지 않는다) 뒤에서부터 적용해 오프셋을 보존한다.
+    """
+    roadmap = Path(args.roadmap)
+    lines = read_lines(roadmap)
+    root = roadmap.resolve().parent
+    per_file: dict[Path, list[tuple[int, int, str, str]]] = {}
+    texts: dict[Path, str] = {}
+    fixed: list[str] = []
+    unresolved: list[str] = []
+    for path, text, match in _dangling_matches(roadmap, lines):
+        pointer = match.group(1)
+        candidate = archive_candidate(root, pointer)
+        label = _label_for(roadmap, path)
+        if candidate is None:
+            unresolved.append(f"{label}: {pointer}")
+            continue
+        texts.setdefault(path, text)
+        start, end = match.span(1)
+        per_file.setdefault(path, []).append((start, end, pointer, candidate))
+        fixed.append(f"{label}: {pointer} -> {candidate}")
+
+    if not args.dry_run:
+        for path, spans in per_file.items():
+            text = texts[path]
+            for start, end, _pointer, candidate in sorted(spans, reverse=True):
+                text = text[:start] + candidate + text[end:]
+            path.write_text(text.rstrip() + "\n", encoding="utf-8")
+
+    prefix = "[dry-run] " if args.dry_run else ""
+    if fixed:
+        print(f"{prefix}plan 포인터 갱신 {len(fixed)}건")
+        for item in fixed:
+            print(f"- {item}")
+    if unresolved:
+        print(f"판정 불가 {len(unresolved)}건 — 아카이브 사본이 없다(경로를 지어내지 않는다)")
+        for item in unresolved:
+            print(f"- {item}")
+    if not fixed and not unresolved:
+        print("plan 포인터 갱신: 대상 없음 (전부 실재)")
+    return 1 if unresolved else 0
+
+
+def duplicate_milestone_ids(lines: list[str]) -> list[tuple[str, str]]:
+    """같은 ROADMAP 안에 중복된 milestone id 와 그 줄 번호.
+
+    2026-09-03 신설 — 두 세션이 같은 날 독립으로 M28 을 등록했고, `lint` 는 PASS 를 줬다.
+    `complete --milestone M28` 이 맞는 블록을 닫은 것은 운이었고, 그 사이 Codex 세션의
+    plan-position 훅은 남의 블록을 읽어 엉뚱한 step 을 「다음 할 일」로 띄우고 있었다.
+    status 와 무관하게 본다 — 완료된 것과 진행 중인 것이 같은 번호여도 위 두 사고가 그대로 난다.
+    """
+    # ⚠ 탐지원을 `find_blocks` 로 맞춘다 (2026-09-03 리뷰) — `complete` 가 실제로 다루는
+    # 집합과 같아야 「lint 는 경고하는데 complete 는 다른 걸 본다」가 생기지 않는다.
+    # (둘 다 코드펜스 안의 예시 마커를 구분하지 않는다는 한계는 공유한다 — 갈라지는 것보다 낫다.)
+    seen: dict[str, list[int]] = {}
+    for b in find_blocks(lines):
+        seen.setdefault(b.milestone_id, []).append(b.start + 1)
+    return [
+        (mid, "줄 " + ", ".join(str(n) for n in rows))
+        for mid, rows in sorted(seen.items())
+        if len(rows) > 1
+    ]
+
+
+def warn_duplicates(lines: list[str]) -> None:
+    """읽기 전용 명령에서는 거부하지 않고 경고만 낸다."""
+    for mid, where in duplicate_milestone_ids(lines):
+        print(f"⚠ duplicate milestone id: `{mid}` — {where} "
+              "(complete 는 거부된다. `lint` 로 진단)", file=sys.stderr)
 
 
 def lint(args: argparse.Namespace) -> int:
@@ -640,10 +825,19 @@ def lint(args: argparse.Namespace) -> int:
     roadmap = Path(args.roadmap)
     lines = read_lines(roadmap)
     errors: list[str] = []
+    for milestone_id, where in duplicate_milestone_ids(lines):
+        errors.append(
+            f"duplicate milestone id: `{milestone_id}` — {where}. 한 ROADMAP 에 같은 번호가 둘이면 "
+            "`complete --milestone <ID>` 가 어느 블록을 닫을지 정해지지 않고, plan-position 훅이 "
+            "남의 블록을 읽는다(2026-09-03 실측: Codex 세션이 다른 milestone 의 step 을 자기 다음 "
+            "할 일로 표시했다). 살아있는 쪽 번호를 옮긴다 — 완료·동결된 기록이 아니라 active 쪽을 "
+            "고치는 방향이 규약(워크트리 규약 §2.5 ① 번호 선점)이다"
+        )
     for pointer in dangling_plan_pointers(roadmap, lines):
         errors.append(
             f"dangling plan pointer: `{pointer}` — 파일이 없다. 아카이브로 옮겼으면 "
-            "`archive/plans/…` 로 백링크를 갱신한다 (재개 경로가 끊긴다. "
+            "`archive/plans/…` 로 백링크를 갱신한다 — 기계 갱신은 "
+            "`roadmap_sync.py repair-plan-pointers` (재개 경로가 끊긴다. "
             "필드 값과 산문의 로컬 경로는 실재해야 하고, 언급은 코드 펜스·"
             "진행 로그/finding 큐 절·실재하는 다른 레포 경로로만 통과한다)"
         )
@@ -652,7 +846,7 @@ def lint(args: argparse.Namespace) -> int:
         for error in errors:
             print(f"- {error}")
         return 1
-    print("roadmap lint: PASS (plan 포인터 전부 실재)")
+    print("roadmap lint: PASS (plan 포인터 실재 · milestone ID 중복 없음)")
     return 0
 
 
@@ -661,6 +855,7 @@ def lint(args: argparse.Namespace) -> int:
 # 함께 폐지됐다. 크기 판정은 계획서의 step 수와 리프 판정으로 되돌아간다.
 def status(args: argparse.Namespace) -> int:
     lines = read_lines(Path(args.roadmap))
+    warn_duplicates(lines)
     counts: dict[str, int] = {}
     for block in find_blocks(lines):
         state = block.attrs.get("status", "pending")
@@ -859,12 +1054,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_complete.add_argument("--force", action="store_true",
                             help="active/completed 가 아닌 status(blocked·pending 등)도 완료로 덮는다")
 
+    p_drop = sub.add_parser("drop", help="milestone 을 폐기(dropped)로 닫고 종결 섹션으로 옮긴다")
+    p_drop.add_argument("--milestone", required=True)
+    p_drop.add_argument("--evidence", required=True)
+    p_drop.add_argument("--reason", required=True)
+
     p_relocate = sub.add_parser(
         "relocate",
         help="진행 섹션에 남은 종결 블록을 Completed 섹션으로 옮긴다 (마커·BACKLOG 는 안 건드린다)",
     )
     p_relocate.add_argument("--dry-run", action="store_true",
                             help="옮길 대상만 출력하고 파일은 쓰지 않는다")
+
+    p_repair = sub.add_parser(
+        "repair-plan-pointers",
+        help="끊긴 plan 백링크를 archive/ 사본으로 갱신한다 (milestone 마감 직후 — lint FAIL 예방)",
+    )
+    p_repair.add_argument("--dry-run", action="store_true",
+                          help="갱신 대상만 출력하고 파일은 쓰지 않는다")
 
     p_gap = sub.add_parser("gap-check")
     p_gap.add_argument("--gap-out", default="")
@@ -884,8 +1091,12 @@ def main(argv: list[str] | None = None) -> int:
         return lint(args)
     if args.cmd == "complete":
         return complete(args)
+    if args.cmd == "drop":
+        return drop(args)
     if args.cmd == "relocate":
         return relocate(args)
+    if args.cmd == "repair-plan-pointers":
+        return repair_plan_pointers(args)
     if args.cmd == "gap-check":
         return gap_check(args)
     if args.cmd == "compact":

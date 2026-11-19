@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Done"
+  short_description: "Close a milestone: DoD check, review, report, closing audit, roadmap"
+  default_prompt: "Use $harness-done only when the user explicitly invokes it or harness-run reaches the milestone boundary."

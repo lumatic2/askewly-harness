@@ -1,13 +1,13 @@
 ---
 name: harness-bootstrap
-description: 새 git 레포에 AI-readiness 하네스를 부팅하는 설치 스킬. "하네스 깔아줘", "프로젝트 부트스트랩", "AI-readiness 세팅", "신규 레포 초기화", "/harness-bootstrap"에 사용한다. CLAUDE.md·AGENTS.md·ROADMAP.md·docs/BACKLOG.md·docs/adr·changesets와 harness evidence ledger를 등록하며, 실행 규칙의 정본은 /harness-plan·/harness-run·/harness-done 3종과 custom-skills 문서다.
+description: 새 git 레포에 AI-readiness 하네스를 부팅하는 설치 스킬. "하네스 깔아줘", "프로젝트 부트스트랩", "AI-readiness 세팅", "신규 레포 초기화", "/harness-bootstrap"에 사용한다. CLAUDE.md·AGENTS.md·ROADMAP.md·docs/BACKLOG.md·docs/adr·changesets를 깔고 (기기 로컬 `evidence/repos.local.yaml` 이 있을 때만) evidence 대상 등록도 하며, 실행 규칙의 정본은 /harness-plan·/harness-run·/harness-done 3종과 custom-skills 문서다.
 ---
 
 # /harness-bootstrap — 신규 프로젝트 하네스 부팅 (설치기)
 
-레포에 harness 인프라를 깐다. 이 스킬은 `init-ai-readiness.sh` 의 **interactive wrapper — 설치만 담당**한다. 작업 규칙(planning gate·role lane·산출물 계약·문서 수명·배포 검증 게이트)의 정본은 `/harness-plan`·`/harness-run`·`/harness-done` SKILL.md 3종과 custom-skills 문서이며, **여기에 복제하지 않는다** (2026-07-06 HU2 — 정책 복제가 drift 원인이었음).
+레포에 harness 인프라를 깐다. 이 스킬은 `init-ai-readiness.sh` 의 **interactive wrapper — 설치만 담당**한다. 작업 규칙(산출물 계약·문서 수명·배포 검증 게이트)의 정본은 `/harness-plan`·`/harness-run`·`/harness-done` SKILL.md 3종과 custom-skills 문서이며, **여기에 복제하지 않는다** (2026-07-06 HU2 — 정책 복제가 drift 원인이었음).
 
-핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$HARNESS_ENGINEERING_ROOT`(opt-in). **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
+핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$AO_ROOT`(opt-in). **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
 
 ## 1) 상황 파악 (조용히, 사용자에게 묻기 전)
 
@@ -26,24 +26,23 @@ git rev-parse --git-dir > /dev/null 2>&1 || echo "NOT_GIT"
 
 ## 2) 무엇이 깔리나 — 묻지 않는다
 
-**아무것도 묻지 않고 코어만 깐다** (2026-07-23 OI1). 코어 11개:
+**아무것도 묻지 않고 코어만 깐다** (2026-07-23 OI1). 코어 8개(계획·보고 템플릿은 2026-09-21 부터 레포에 깔지 않는다 — `harness-plan`·`harness-done` 스킬 디렉터리가 정본):
 
 ```
 CLAUDE.md · AGENTS.md · ROADMAP.md · docs/BACKLOG.md · docs/adr/README.md
-changesets/{README,CHANGESET_TEMPLATE}.md · templates/PLAN_TEMPLATE.md
-.harness/manifest.json   (+ pre-commit hook · evidence ledger 등록)
+changesets/{README,CHANGESET_TEMPLATE}.md
+.harness/manifest.json
 ```
 
 그 밖의 **모든 것은 lazy** — 폴더도 파일도 미리 깔지 않고, 첫 문서를 만드는 쪽이 만든다.
 배치 규약 정본 = `/harness-plan` 배치 규약 표. 계획은 `plans/`, 리서치는 `research/`,
 완료·동결 기록은 `archive/`.
 
-산출물별 파일은 `/harness-plan` spec readiness 가 **그 문서를 실제로 요구하는 시점**에 받는다:
+산출물별 파일은 계획 인터뷰(§2)가 **그 문서를 실제로 요구하는 시점**에 받는다:
 
 | 필요해질 때 | 커맨드 | 깔리는 것 |
 |---|---|---|
 | PRD·아키텍처를 쓸 때 | `--add product` | `docs/PRD.md` · `docs/ARCHITECTURE.md` |
-| 웹 화면을 만들 때 | `--add design` | design-pack `DESIGN.md` + lint hook (⚠ 이 배포판 미포함 — 없으면 명시적으로 실패) |
 | 모바일 UI 를 만들 때 | `--add ui-mobile` | `docs/UI_GUIDE.md` |
 | 첫 레포 분석을 쓸 때 | `--add analysis` | `references/` + ANALYSIS_TEMPLATE(5섹션) |
 | 첫 실험·메모 | `--add experiments` / `--add notes` | `experiments/` / `notes/` |
@@ -62,8 +61,9 @@ changesets/{README,CHANGESET_TEMPLATE}.md · templates/PLAN_TEMPLATE.md
 ```bash
 # 스크립트 위치를 해석한다 — 홈 배치를 전제하지 않는다(MM8, 2026-07-21).
 # 없으면 조용히 넘어가지 않고 즉시 실패한다: 부트스트랩은 반쯤 되면 더 나쁘다.
+AO_ROOT="${AO_ROOT:-/nonexistent}"
 INIT=""
-for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh"          "${HARNESS_ENGINEERING_ROOT:-/nonexistent}/scripts/init-ai-readiness.sh"; do
+for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do
   [ -f "$c" ] && INIT="$c" && break
 done
 [ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라"; exit 1; }
@@ -78,15 +78,16 @@ bash "$INIT" "$PWD" --full
 ## 4) 보고 (한 메시지)
 
 1. 생성/스킵 파일 목록 (`[ok]`/`[skip]` 요약). 감지한 스택이 있으면 한 줄로 알리되 **분류로 쓰지 않는다**.
-2. 다음 단계 2~3줄: CLAUDE.md 스택/규칙 채우기 → **북극성 세우기(§5)** → ROADMAP milestone 채우기 → 첫 작업은 `/harness-plan` 으로 (빈 spec 은 `/harness-plan` spec readiness 가 사용자와 채운다 — 지금 다 채울 필요 없음).
-3. 산출물별 파일은 **아직 없다**는 것과, `/harness-plan` 이 필요할 때 `--add <pack>` 로 받는다는 것을 한 줄로 알린다. 웹 디자인 design-pack 은 이 배포판에 포함되지 않는다 — `--add design` 은 팩이 없으면 명시적으로 실패한다.
+2. 다음 단계 2~3줄: CLAUDE.md 스택/규칙 채우기 → **북극성 세우기(§5)** → ROADMAP milestone 채우기 → 결정이 있거나 무감독으로 길게 갈 일이면 사용자가 `/harness-plan` 을 친다, 그 외는 그냥 진행 (빈 spec 은 계획 인터뷰(§2)가 사용자와 채운다 — 지금 다 채울 필요 없음).
+3. 산출물별 파일은 **아직 없다**는 것과, `/harness-plan` 이 필요할 때 `--add <pack>` 로 받는다는 것을 한 줄로 알린다. 웹 화면 디자인은 팩이 아니라 별도 디자인 스킬의 몫이다.
 
-운영 규칙 포인터 (복제 금지): planning gate·role lanes → `/harness-plan` SKILL.md · milestone 완료·ROADMAP/BACKLOG 쓰기 소유·문서 수명(living vs record) → `/harness-done` SKILL.md. custom-skills 배포 검증(acceptance·hardening parity·evidence pack) → `custom-skills/scripts/` + docs.
+운영 규칙 포인터 (복제 금지): milestone 완료·ROADMAP/BACKLOG 쓰기 소유·문서 수명(living vs record) → `/harness-done` SKILL.md. custom-skills 배포 검증(acceptance·hardening parity·evidence pack) → `custom-skills/scripts/` + docs.
 
 ## 5) 북극성 세우기 (설치 직후 — 건너뛰지 않는다)
 
-설치가 끝나면 `CLAUDE.md` 맨 위 「북극성」 절이 채워졌는지 확인하고, **비어 있으면 그 자리에서 `/harness-plan` 계획 작성(북극성 세우기)으로 넘긴다**(문구는 사용자 소유 — 승인 후에만 기록). 부팅만 하고 북극성 없이 남겨두지 않는다 — 뒤따르는 milestone·계획서가 전부 이 절을 백링크한다. (2026-07-23 재조립 C4 로 구 `OBJECTIVE.md` 는 은퇴 — 스캐폴드가 이 절을 빈 채로 깔아 준다.)
+설치가 끝나면 `CLAUDE.md` 맨 위 「북극성」 절이 채워졌는지 확인하고, **비어 있으면 이 절에서 직접 북극성 인터뷰를 한다**(`/harness-plan` 은 사용자가 이름을 불러야 켜지므로 모델이 스스로 들어가지 않는다). 부팅만 하고 북극성 없이 남겨두지 않는다 — 뒤따르는 milestone·계획서가 전부 이 절을 백링크한다. (2026-07-23 재조립 C4 로 구 `OBJECTIVE.md` 는 은퇴 — 스캐폴드가 이 절을 빈 채로 깔아 준다.)
 
+- **인터뷰 순서**: ① README·기존 문서에서 읽을 수 있는 건 먼저 읽고, 레포가 무엇이고 누가 쓰는지 사용자에게 1~2문 묻는다 ② 후보 북극성 문구 1~3개를 대화로 제안한다 ③ 사용자가 고른·고친 문구를 되읽어 확인한다 ④ 명시 승인 뒤에만 `CLAUDE.md` 「북극성」 절에 그대로 기록한다.
 - **문구는 사용자 소유**: 에이전트는 후보 북극성 문구를 대화로 제안하고, **사용자가 명시 승인한 뒤에만** 파일에 기록한다. 승인 전 자율 작성 금지 (북극성 소유권, 2026-07-19).
 - 부팅 직후라 재료가 얇으면 북극성 설계의 **재료 수집(리서치) 단계**가 기본이다 — 생략은 "조사 불요 — <이유>" 명시 시만.
 - 사용자가 "지금 말고"라고 하면 보고 마지막 줄에 남은 숙제로 한 줄 남기고 끝낸다.
@@ -94,7 +95,7 @@ bash "$INIT" "$PWD" --full
 ## 주의
 
 - **멱등 + additive**: 재실행해도 기존 파일 보존. 팩 추가는 manifest `packs_added` 에 누적된다 — 이건 *기록*이지 레포 분류가 아니다(분류 개념은 2026-07-23 폐지).
-- repo 가 크거나 구조가 바뀌면 nested `AGENTS.md`/`CLAUDE.md` landmark 후보를 보고에 남긴다 (생성 규칙 정본은 `/harness-plan`·context-manager).
+- repo 가 크거나 구조가 바뀌면 nested `AGENTS.md`/`CLAUDE.md` landmark 후보를 보고에 남긴다 (생성 규칙 정본은 context-manager).
 
 ## 짝 스킬
 

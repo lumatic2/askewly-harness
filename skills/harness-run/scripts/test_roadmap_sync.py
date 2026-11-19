@@ -802,3 +802,159 @@ def test_field_inside_append_only_is_still_checked():
         assert any("ghost4" in e for e in _lint_errors(root))
 
     run_in_tmp(case)
+
+
+# --- repair-plan-pointers (2026-09-02) — milestone 마감이 만들던 lint FAIL 을 닫는다 ---
+
+
+def _repair(root: Path, dry_run: bool = False) -> tuple[int, str]:
+    argv = ["repair-plan-pointers"] + (["--dry-run"] if dry_run else [])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = roadmap_sync.main(argv)
+    return code, buf.getvalue()
+
+
+def test_repair_rewrites_archived_plan_pointer():
+    # milestone 을 닫고 계획서를 archive/plans/ 로 옮기면 마커의 `- Plan:` 이 끊긴다.
+    # 이 명령이 그 자리를 아카이브 사본으로 갱신해 lint 를 PASS 로 되돌린다.
+    def case(root: Path):
+        (root / "archive" / "plans").mkdir(parents=True)
+        (root / "archive" / "plans" / "p.md").write_text("plan", encoding="utf-8")
+        rm = root / "ROADMAP.md"
+        rm.write_text(ROADMAP + "\n- Plan: plans/p.md\n", encoding="utf-8")
+        assert _lint_errors(root)  # 착수 상태 = FAIL
+        code, out = _repair(root)
+        assert code == 0, out
+        assert "archive/plans/p.md" in out
+        assert "- Plan: archive/plans/p.md" in rm.read_text(encoding="utf-8")
+        assert _lint_errors(root) == []
+
+    run_in_tmp(case)
+
+
+def test_repair_dry_run_does_not_write():
+    def case(root: Path):
+        (root / "archive" / "plans").mkdir(parents=True)
+        (root / "archive" / "plans" / "p.md").write_text("plan", encoding="utf-8")
+        rm = root / "ROADMAP.md"
+        rm.write_text(ROADMAP + "\n- Plan: plans/p.md\n", encoding="utf-8")
+        before = rm.read_text(encoding="utf-8")
+        code, out = _repair(root, dry_run=True)
+        assert code == 0
+        assert "[dry-run]" in out
+        assert rm.read_text(encoding="utf-8") == before
+
+    run_in_tmp(case)
+
+
+def test_repair_does_not_invent_paths():
+    # 아카이브 사본이 없으면 고치지 않고 판정 불가로 보고한다 (경로 위조 금지, M8 D3).
+    def case(root: Path):
+        rm = root / "ROADMAP.md"
+        rm.write_text(ROADMAP + "\n- Plan: plans/gone.md\n", encoding="utf-8")
+        code, out = _repair(root)
+        assert code == 1
+        assert "판정 불가" in out
+        assert "- Plan: plans/gone.md" in rm.read_text(encoding="utf-8")
+
+    run_in_tmp(case)
+
+
+def test_repair_leaves_fenced_and_append_only_prose_alone():
+    # 탐지에 안 걸리는 자리(펜스 인용)의 같은 문자열은 치환 대상이 아니다 —
+    # 스팬 단위 치환이라 전역 replace 로 예시를 망가뜨리지 않는다.
+    def case(root: Path):
+        (root / "archive" / "plans").mkdir(parents=True)
+        (root / "archive" / "plans" / "p.md").write_text("plan", encoding="utf-8")
+        rm = root / "ROADMAP.md"
+        rm.write_text(
+            ROADMAP
+            + "\n- Plan: plans/p.md\n"
+            + "\n```markdown\n- Plan: plans/p.md\n```\n",
+            encoding="utf-8")
+        code, out = _repair(root)
+        assert code == 0, out
+        text = rm.read_text(encoding="utf-8")
+        assert "- Plan: archive/plans/p.md" in text
+        assert "```markdown\n- Plan: plans/p.md\n```" in text  # 펜스 예시는 그대로
+
+    run_in_tmp(case)
+
+
+def test_repair_is_idempotent_and_noop_when_clean():
+    def case(root: Path):
+        code, out = _repair(root)
+        assert code == 0
+        assert "대상 없음" in out
+
+    run_in_tmp(case)
+
+
+def _roadmap_parse_module():
+    import sys
+
+    bin_dir = str(Path(__file__).resolve().parents[2] / "session-end" / "bin")
+    if bin_dir not in sys.path:
+        sys.path.insert(0, bin_dir)
+    import roadmap_parse
+
+    return roadmap_parse
+
+
+def test_drop_marks_and_relocates():
+    def case(root: Path):
+        code = roadmap_sync.main(
+            ["drop", "--milestone", "M1", "--evidence", "notes/drop.md", "--reason", "범위 폐기"]
+        )
+        assert code == 0
+        path = root / "ROADMAP.md"
+        text = path.read_text(encoding="utf-8")
+        assert 'id="M1" status="dropped"' in text
+        assert 'evidence="notes/drop.md"' in text
+        assert "- Dropped by: 범위 폐기" in text
+        assert "- Evidence: notes/drop.md" in text
+        assert "- Status: [x] DROP" in text
+        assert "- Status: [ ]\n" in text  # M2 는 그대로
+        assert _section_of(text, "M1") == "Completed"
+        assert _section_of(text, "M2") == "Active Milestones"
+        rp = _roadmap_parse_module()
+        _goal, milestones, _parked = rp.parse_roadmap(path)
+        m1 = next(m for m in milestones if m["id"] == "M1")
+        assert m1["status"] in rp.TERMINAL_STATUSES
+        assert m1["status"] == "dropped"
+        assert m1["checkbox"].startswith("[x]")
+
+    run_in_tmp(case)
+
+
+def test_drop_rejects_completed():
+    def case(root: Path):
+        assert roadmap_sync.main(["complete", "--milestone", "M1"]) == 0
+        path = root / "ROADMAP.md"
+        before = path.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = roadmap_sync.main(
+                ["drop", "--milestone", "M1", "--evidence", "e.md", "--reason", "x"]
+            )
+        assert code != 0
+        assert path.read_bytes() == before
+
+    run_in_tmp(case)
+
+
+def test_drop_is_idempotent_and_not_found_fails():
+    def case(root: Path):
+        args = ["drop", "--milestone", "M2", "--evidence", "e.md", "--reason", "r"]
+        assert roadmap_sync.main(args) == 0
+        path = root / "ROADMAP.md"
+        after_first = path.read_bytes()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert roadmap_sync.main(args) == 0
+        assert path.read_bytes() == after_first
+        assert "already dropped" in out.getvalue()
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert roadmap_sync.main(["drop", "--milestone", "M9", "--evidence", "e", "--reason", "r"]) == 1
+
+    run_in_tmp(case)

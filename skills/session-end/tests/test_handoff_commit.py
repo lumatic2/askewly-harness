@@ -1,7 +1,9 @@
 """handoff_commit.sh 계약 테스트 (HO1 2026-07-27).
 
 계약: HANDOFF.md 단독 커밋(다른 dirty/staged 비오염) · 실패는 경고+exit 0 ·
-linked worktree 쓰기 거부 · --to-main 은 main HANDOFF.md dirty 면 보류.
+linked worktree 는 main 체크아웃 HANDOFF.md 를 커밋(2026-09-29) ·
+<git-dir>/HANDOFF_COMMIT_MSG 가 있으면 커밋 본문에 붙이고 성공 시 지운다 · 커밋 거부 시 끝 40줄을 stderr 로 보이고 파일은 남긴다 ·
+--to-main 은 은퇴(2026-11-07 M25) — 알 수 없는 인자 경고만 낸다.
 """
 from __future__ import annotations
 
@@ -106,44 +108,151 @@ def test_not_a_repo_warns_exit0(tmp_path: Path):
     assert "git 레포가 아님" in proc.stdout
 
 
-def test_linked_worktree_refused(repo: Path, tmp_path: Path):
+def test_linked_worktree_commits_in_main(repo: Path, tmp_path: Path):
     wt = tmp_path / "wt"
     git(repo, "worktree", "add", str(wt), "-b", "feature")
-    (wt / "HANDOFF.md").write_text("- wt note\n", encoding="utf-8")
-    before = git(wt, "rev-parse", "HEAD")
+    (repo / "HANDOFF.md").write_text("- merged block from wt\n", encoding="utf-8")
+    before_wt = git(wt, "rev-parse", "HEAD")
+    before_main = git(repo, "rev-parse", "HEAD")
 
     proc = run_helper(wt)
+    assert proc.returncode == 0, proc.stdout
+    assert "main 체크아웃" in proc.stdout and "커밋 완료" in proc.stdout
+    assert git(wt, "rev-parse", "HEAD") == before_wt          # 워크트리 브랜치는 그대로
+    assert git(repo, "rev-parse", "HEAD") != before_main      # main 에 커밋됨
+
+
+def test_no_push_flag_skips_push(repo: Path):
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    proc = run_helper(repo, "--no-push")
     assert proc.returncode == 0
-    assert "worktree" in proc.stdout
-    assert git(wt, "rev-parse", "HEAD") == before  # 커밋 안 됨
+    assert "커밋 완료" in proc.stdout and "--no-push" in proc.stdout
 
 
-def test_to_main_writes_and_commits_in_main(repo: Path, tmp_path: Path):
+def test_commit_message_carries_completion_evidence(repo: Path):
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    msg = repo / ".git" / "HANDOFF_COMMIT_MSG"
+    msg.write_text("완료: X (b) — abc123\n", encoding="utf-8")
+    proc = run_helper(repo)
+    assert proc.returncode == 0, proc.stdout
+    assert git(repo, "log", "-1", "--format=%s").startswith("chore(handoff): 세션 핸드오프 갱신")
+    assert "완료: X (b) — abc123" in git(repo, "log", "-1", "--format=%b").splitlines()
+    assert not msg.exists()
+
+
+def test_commit_without_message_file_has_title_only(repo: Path):
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    proc = run_helper(repo)
+    assert proc.returncode == 0, proc.stdout
+    assert git(repo, "log", "-1", "--format=%b") == ""
+
+
+def test_hook_rejection_shows_reason(repo: Path):
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text('#!/bin/sh\necho "REASON-LINE-XYZ" >&2\nexit 1\n', encoding="utf-8", newline="\n")
+    hook.chmod(0o755)
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    msg = repo / ".git" / "HANDOFF_COMMIT_MSG"
+    msg.write_text("완료: Y — def456\n", encoding="utf-8")
+    before = git(repo, "rev-parse", "HEAD")
+    proc = run_helper(repo)
+    assert proc.returncode == 0
+    assert "[handoff]   REASON-LINE-XYZ" in proc.stderr
+    assert "커밋 실패" in proc.stdout
+    assert git(repo, "rev-parse", "HEAD") == before
+    assert msg.exists()
+
+
+def test_to_main_flag_is_gone(repo: Path, tmp_path: Path):
     (repo / "HANDOFF.md").write_text("- old\n", encoding="utf-8")
     git(repo, "add", "HANDOFF.md")
     git(repo, "commit", "-m", "handoff init")
-    wt = tmp_path / "wt2"
-    git(repo, "worktree", "add", str(wt), "-b", "feature2")
-
+    wt = tmp_path / "wt_gone"
+    git(repo, "worktree", "add", str(wt), "-b", "feature_gone")
     proc = run_helper(wt, "--to-main", stdin="- repo-level note\n")
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "커밋 완료" in proc.stdout
-    assert "repo-level note" in (repo / "HANDOFF.md").read_text(encoding="utf-8")
-    files = git(repo, "show", "--name-only", "--format=", "HEAD").splitlines()
-    assert files == ["HANDOFF.md"]
-
-
-def test_to_main_deferred_when_main_dirty(repo: Path, tmp_path: Path):
-    (repo / "HANDOFF.md").write_text("- committed\n", encoding="utf-8")
-    git(repo, "add", "HANDOFF.md")
-    git(repo, "commit", "-m", "handoff init")
-    (repo / "HANDOFF.md").write_text("- hand edit\n", encoding="utf-8")  # main dirty
-    wt = tmp_path / "wt3"
-    git(repo, "worktree", "add", str(wt), "-b", "feature3")
-    before = git(repo, "rev-parse", "HEAD")
-
-    proc = run_helper(wt, "--to-main", stdin="- overwrite attempt\n")
     assert proc.returncode == 0
-    assert "보류" in proc.stdout
-    assert (repo / "HANDOFF.md").read_text(encoding="utf-8") == "- hand edit\n"  # 불변
-    assert git(repo, "rev-parse", "HEAD") == before
+    assert "알 수 없는 인자: --to-main" in proc.stdout
+    text = (repo / "HANDOFF.md").read_text(encoding="utf-8")
+    assert "워크트리에서 온 메모" not in text
+    assert "repo-level note" not in text
+
+
+@pytest.fixture()
+def pushed_repo(repo: Path, tmp_path: Path) -> tuple[Path, Path]:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    return repo, remote
+
+
+def test_push_held_when_foreign_commit_ahead(pushed_repo):
+    # 2026-11-05 실측: 핸드오프 push 가 다른 세션의 리뷰 전 커밋까지 올렸다
+    repo, remote = pushed_repo
+    (repo / "other.txt").write_text("o\n", encoding="utf-8")
+    git(repo, "add", "other.txt")
+    git(repo, "commit", "-q", "-m", "feat: 다른 세션 작업")
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    proc = run_helper(repo)
+    assert proc.returncode == 0
+    assert "push 보류" in proc.stdout and "다른 세션 작업" in proc.stdout
+    assert git(repo, "rev-list", "--count", "@{u}..HEAD") == "2"
+    # 이 세션 것임을 확인했으면 --push-all — HANDOFF 변경이 없어도 push 단계로 간다
+    proc = run_helper(repo, "--push-all")
+    assert "push 완료" in proc.stdout, proc.stdout
+    assert git(repo, "rev-list", "--count", "@{u}..HEAD") == "0"
+
+
+def test_push_goes_when_only_handoff_and_hygiene_ahead(pushed_repo):
+    repo, _ = pushed_repo
+    (repo / "README.md").write_text("fixed\n", encoding="utf-8")
+    git(repo, "commit", "-q", "-am", "chore(hygiene): 경로 교정")
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    proc = run_helper(repo)
+    assert "push 완료" in proc.stdout, proc.stdout
+    assert git(repo, "rev-list", "--count", "@{u}..HEAD") == "0"
+
+
+def test_commit_label_is_ascii_and_never_raw_uname(repo: Path):
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    run_helper(repo)
+    subject = git(repo, "log", "-1", "--format=%s")
+    assert "MINGW" not in subject and "MSYS" not in subject
+
+
+def test_with_path_commits_backlog_alongside(repo: Path):
+    (repo / "docs").mkdir()
+    (repo / "docs" / "BACKLOG.md").write_text("# BACKLOG\n", encoding="utf-8")
+    (repo / "README.md").write_text("dirty\n", encoding="utf-8")
+    (repo / "HANDOFF.md").write_text("- x\n", encoding="utf-8")
+    proc = run_helper(repo, "--with", "docs/BACKLOG.md")
+    assert proc.returncode == 0, proc.stderr
+    files = sorted(git(repo, "show", "--name-only", "--format=", "HEAD").splitlines())
+    assert files == ["HANDOFF.md", "docs/BACKLOG.md"]
+    assert "README.md" in git(repo, "diff", "--name-only")
+
+
+def test_with_file_from_merger_is_committed_and_removed(repo: Path):
+    (repo / "docs").mkdir()
+    (repo / "docs" / "BACKLOG.md").write_text("# BACKLOG\n- x\n", encoding="utf-8")
+    (repo / "HANDOFF.md").write_text("- y\n", encoding="utf-8")
+    (repo / ".git" / "HANDOFF_WITH").write_text("docs/BACKLOG.md\n", encoding="utf-8")
+    proc = run_helper(repo)
+    assert proc.returncode == 0, proc.stderr
+    files = git(repo, "show", "--name-only", "--format=", "HEAD").splitlines()
+    assert sorted(files) == ["HANDOFF.md", "docs/BACKLOG.md"]
+    assert not (repo / ".git" / "HANDOFF_WITH").exists()
+
+
+def test_hook_rejection_reason_beyond_five_lines_goes_to_stderr(repo: Path):
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(exist_ok=True)
+    hook.write_text('#!/bin/sh\necho "GATE: reason"\nfor i in 1 2 3 4 5 6 7 8; do echo "tail-$i"; done\nexit 1\n',
+                    encoding="utf-8", newline="\n")
+    hook.chmod(0o755)
+    (repo / "HANDOFF.md").write_text("# HANDOFF\n- 새 줄\n", encoding="utf-8")
+    r = run_helper(repo, "--no-push")
+    assert r.returncode == 0
+    assert "GATE: reason" in r.stderr and "tail-8" in r.stderr
+    assert "STATUS_ROADMAP_ALLOW_NOOP" not in r.stdout + r.stderr

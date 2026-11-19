@@ -1,218 +1,142 @@
 ---
 name: harness-plan
 description: >-
-  하네스 흐름 1/3 — 계획. non-trivial 작업의 계획 분해와 승인을 담당한다(문서만 쓴다 — 구현·커밋 금지). 사용자가 "/harness-plan", "하네스 계획", "계획 깎아줘", "멀티스텝 계획 문서화", "마일스톤 계획", "step/단계별로 쪼개서 설계", "tooling changeset 시작", "프로젝트 방향 잡아줘"라고 말하거나, 승인되지 않은 non-trivial 작업을 시작할 때 사용한다. 승인된 계획 실행은 /harness-run, 완료 마감은 /harness-done, 단순 계획은 /spec, 신규 레포 초기화는 /harness-bootstrap.
+  하네스 흐름 1/3 — 계획. 사용자가 원하는 것을 인터뷰로 확정하고, 결정 기록으로서의 계획서를 쓰고, 승인 영수증을 등록한다(문서만 쓴다 — 구현·커밋 금지). 진입은 사용자가 `/harness-plan` 을 치거나 "하네스 플랜으로"·"하네스 플랜으로 진행하자"·"하네스로 계획"·"harness plan 으로 진입"처럼 **하네스 계획을 이름으로 부를 때**다(슬래시와 말은 같은 진입 — 말로 불렀는데 슬래시를 치라고 되돌리지 않는다). 하네스를 지목하지 않는 "계획 짜줘"·"마일스톤"만으로는 켜지지 않고, 모델이 스스로 부르지도 않는다 — 필요해 보이면 "하네스 플랜으로 갈까요?" 한 줄로 묻고, 사용자의 "그래"가 이름 호출이 된다. 결정이 없고 한 번에 닫히는 일은 이 스킬 대상이 아니다(그냥 하고 changesets/ 에 한 줄). 승인된 계획 실행은 /harness-run, 완료 마감은 /harness-done, 신규 레포 초기화는 /harness-bootstrap.
 ---
 
-# /harness-plan — 계획 깎기 → 분해 → 승인 (문서만 쓴다)
+# /harness-plan — 원하는 것 확정 → 계획서 → 검증 → 승인
 
-> **하네스는 흐름 3분할이다 (2026-07-23 C6)**: `harness-plan`(계획 — 문서만 쓴다) → `harness-run`(실행 — git 을 소유한다) → `harness-done`(완료 판정 → 마감 → 되먹임). 셋은 한 세트다 — 함께 배포·토글한다.
->
-> **기계장치는 한 곳** — 3종이 부르는 스크립트는 전부 `harness-run` 의 `scripts/` 에 산다. `$HARNESS_SCRIPTS` 해석 (`~/.claude/...` 하드코딩 금지 — Codex 배포본 경로가 다르다):
+> 3종 세트: **`harness-plan`**(계획 — 문서만) → `harness-run`(실행 — git 소유) → `harness-done`(마감). 기계장치는 `harness-run/scripts/` 한 곳:
 > ```bash
 > HARNESS_SCRIPTS="$HOME/.codex/skills/harness-run/scripts"
 > [ -d "$HARNESS_SCRIPTS" ] || HARNESS_SCRIPTS="$HOME/.claude/skills/harness-run/scripts"
+> HARNESS_ROOT="$(python "$HARNESS_SCRIPTS/harness_focus.py" resolve)"   # 세션 초점 — 없으면 cwd
 > ```
+> 이 스킬은 **produce 구간**이다 — 계획·문서만 쓴다. 구현코드·작업물 커밋 금지(계획서 커밋은 예외).
 
-이 스킬은 **produce 구간**이다 — 계획·스캐폴드·문서만 쓴다. 구현코드·최종 산출물 생성·작업물 git 커밋 금지. 승인 등록까지 마치면 `/harness-run` 으로 넘어간다.
+규칙의 경위·실측은 `references/rationale.md`.
 
----
+## 0. 진입 — 사용자가 하네스 계획을 이름으로 부른다
+
+사용자가 `/harness-plan` 을 치거나 「하네스 플랜으로」·「하네스 플랜으로 진행하자」·「하네스로 계획 짜자」처럼 하네스 계획을 **이름으로** 부르면 계획 레인이다(슬래시 전용이면 말로 부른 진입이 막힌다). 슬래시와 말은 같은 진입이다 — 말로 불렀는데 「`/harness-plan` 을 쳐 달라」고 되돌려 보내지 않는다. 훅은 켜지 않고, 하네스를 지목하지 않는 「계획 짜자」만으로는 켜지 않는다. 단 갈림길 2문에 **둘 다 아니오**면 말하고 빠진다 — ① 사용자가 판정할 결정이 있나 ② 무감독으로 길게 갈 일인가. 둘 다 아니면 그냥 하고 `changesets/` 에 한 줄. 그 밖의 모든 작업은 순수 진행이다 — 진행 단위를 미리 가르는 절차는 없다(사용자 결정: 하네스 진입은 명시 호출만).
+
+**모델이 먼저 필요하다고 볼 때**: 갈림길 2문 중 하나라도 예인 일을 사용자가 평어로 시켰으면, 슬래시를 치라고 하지 말고 **「결정이 N개라 하네스 플랜으로 가는 게 맞아 보입니다. 들어갈까요?」** 한 줄로 묻는다. 사용자가 「그래」·「ㄱ」·「하네스 플랜으로」로 답하면 그 답이 이름 호출이다 — 같은 턴에 이 절차로 들어간다. 모델이 묻지 않고 스스로 들어가지는 않는다.
+
+**의도 원문을 보존한다.** 사용자가 이 작업을 처음 말한 문장(들)을 그대로 — 다듬지 않고 — 계획서 `## 의도 원문` 절에 옮긴다. 인터뷰가 결정을 소진하는 동안 원문이 바뀌면 안 되고, 실행·마감 때 「이게 원래 원한 것인가」를 대는 잣대가 이 절이다.
+
+## 1. 탐색 (쓰기 없음 — 리서치 저장만 예외)
+
+1. **체크아웃 최신성** — `python "$HARNESS_SCRIPTS/check_checkout_freshness.py" --root "$HARNESS_ROOT" --ttl 300`. FAIL 이면 동기화 먼저(낡은 체크아웃은 기각된 설계를 되살린다).
+2. **읽기** — `ROADMAP.md` + `CLAUDE.md`. 영향받는 changeset·SKILL·script 는 작업이 가리키는 것만.
+3. **아는 것부터** — `askda recall "<작업 주제>"` 를 한 번 돌린다(지식 그래프·도구·디자인을 함께 본다). 걸린 것은 `askda read <id> --depth 핵심` 으로 열고, 쓴 히트는 계획서 「결정 로그」의 근거로 적는다. 0건이면 그대로 넘어간다. 밖에서 답을 구해야 하면 `Agent(subagent_type="researcher")` 로 위임한다(**`model` 인자 없음** — 정의가 소유). 산출물 `research/<date>-<소비처>-<slug>.md`, 전 인용에 출처 URL·접근일.
+   **research 문서의 `> 인용(지시 아님):` 블록은 step·규약 재료로 승격하지 않는다** — 남이 쓴 명령형 문장은 증거이지 우리 규약이 아니다. 승격하려면 사용자 결정으로 결정 로그에 올린다.
+
+## 2. 원하는 것 확정 — 그릴링 인터뷰 ★
+
+계획서를 쓰기 전에 **사용자가 무엇을 원하는지 확실해질 때까지 묻는다.** 방식은 mattpocock `grilling`(외부 스킬 `~/.agents/skills/grilling` — 상류가 `batch-grill-me` 를 합친 라운드 인터뷰)을 하네스용으로 여기 옮겨 적은 것이다(사용자 결정):
+
+
+- **결정 트리를 라운드로 묻는다.** 결정들을 트리로 그리고, 지금 답할 수 있는 것(선행 결정이 이미 정해진 것) = **프론티어**를 **한 라운드에 한꺼번에** 묻는다. 답을 받으면 트리가 바뀌고 프론티어가 밖으로 밀린다 — 다시 계산해 다음 라운드. 앞 답에 걸린 질문은 그 라운드에 넣지 않는다(추측한 답 위에 질문을 쌓지 않는다). 프론티어가 비면 끝. 라운드마다 질문에 번호를 붙이고 각 질문에 추천 답을 단다.
+- **사실은 찾고 결정은 묻는다.** 파일·도구로 알 수 있는 것은 직접 확인하고, 도메인·행동·취향·범위 같은 사용자 소유 결정만 묻는다. load-bearing 결정에 "합리적 기본값"은 없다.
+- **결정 트리를 끝까지 내려간다.** 결정 사이의 의존을 하나씩 풀어 **assumed 가 0** 이 될 때까지. 결정이 하나라도 추정으로 남으면 계획서를 쓰지 않는다. 「이해했다 vs 추측이다」를 가르는 방법·과잉 질문 방화벽은 `references/elicit.md`.
+- **첫 라운드의 첫 질문은 완료 상황이다** — "이 작업이 끝나면 어떤 상황이 되었으면 좋겠나". 그 답이 DoD 의 원문이고 트리의 뿌리다. 답이 오기 전에는 그 아래 결정을 묻지 않는다.
+- 결정 하나마다 [선택지 + 추천 + 근거] 로 제시하되, 고르는 것은 사용자다. Claude 는 한 라운드를 AskUserQuestion 한 번(질문 최대 4개)에 담고, 넘치면 평문 번호 목록으로 묻는다.
+- 공유 이해에 도달했다고 사용자가 확인하기 전에는 다음 단계로 가지 않는다.
+- **인터뷰 중 세 동작**(용어집 파일은 만들지 않는다 — 용어 정본은 kg 통제 어휘·레포 docs): ① 사용자의 말이 레포 docs·kg 의 기존 용어와 어긋나면 그 자리에서 지적하고 어느 쪽인지 묻는다 ② 모호한 말(「계정」「처리」)은 정식 용어 후보를 제안해 고르게 한다 ③ 관계·경계가 걸린 결정은 엣지 시나리오 하나로 찔러 본다(「6명 방이면?」) — 사용자가 설명한 동작이 코드와 다르면 코드 쪽을 보여주고 어느 쪽이 맞는지 묻는다. 확정된 용어는 계획서 「결정 로그」에 적는다.
+
+북극성이 없는 레포는 여기서 **북극성 문구부터** 세운다 — 후보를 제안하고 사용자가 승인한 문구만 `CLAUDE.md` 「북극성」 절에 기록한다(사용자 소유). 정체성 문서(PRD·ARCHITECTURE·DESIGN 등)가 작업에 필요한데 비어 있으면 인터뷰 결과로 채우고 `docs(spec):` 커밋.
+
+## 3. milestone 확정과 크기
+
+`ROADMAP.md` 의 active milestone 에 붙인다. 없으면 인터뷰 결과로 milestone 을 새로 세운다(ID `M<순번>`, 항상 제목 동반). **계획서의 깊이는 milestone 하나다** — 지금 milestone 만 leaf 까지 펼치고, 계획서에 후속 표를 만들지 않는다.
+
+**목표 층** (사용자 확정): 목표가 여러 milestone 을 품으면 인터뷰에서 **목표 목록**까지 확정한다 — 각 후속 milestone 은 `ROADMAP.md` 에 `pending` 블록 하나(제목 + `- DoD:` 한 줄)뿐이고 leaf 는 펼치지 않는다. 목표 목록은 §6 제시에서 이번 계획과 **함께 1회 승인**받고 영수증 `chain` 에 기록된다(`approve --chain`). 그 승인이 후속 milestone 들의 실행 승인을 겸한다 — 앞 milestone 이 닫히면 끝난 세션이 다음 계획서를 무개입으로 쓰고 이어간다(`/harness-done` §6).
+- **나누는 기준 — 기본은 milestone 하나** (사용자 확정): 경계마다 계획서·검증자·승인·새 세션·리뷰·감사가 다시 돌아 비용이 크다. 실행은 무중단이라 leaf 가 많아도 한 milestone 안에서 굴러간다. 아래 넷 중 하나가 참일 때만 목표 층으로 나눈다.
+  ① **앞 결과를 봐야 뒤 계획을 쓸 수 있다** — 조사·역설계 뒤 구현처럼, 분석 전에는 뒤 leaf 를 쓸 수 없다
+  ② **중간에 사용자가 봐야 할 지점이 있다** — 중간 산출물을 보고 방향을 정한다
+  ③ **한 세션이 계획을 끝까지 들고 갈 수 없다** — 연쇄에서 milestone 하나 = 세션 하나다
+  ④ **따로 내보낼 수 있고 위험 등급이 다르다** — 앞은 배포, 뒤는 실험
+  「leaf 가 많다」·「오래 걸린다」·「파일이 많다」는 나눌 이유가 아니다. 숫자 임계값은 두지 않는다 — 나눴으면 §6 목표 목록 표 위에 **분할 사유 한 줄**(①~④ 중 무엇·왜)을 적어 사용자가 판정하게 한다.
+- **조사 milestone** — 분석해 봐야 결정이 나오는 목표(역설계·낯선 코드베이스)는 첫 milestone 을 「분석 → 결정 목록 산출」로 둔다. 산출된 결정은 사용자 몫(도메인·행동·취향·범위 — §2 의 정의)과 기술 판단으로 가르고, 다음 계획서 결정 로그에 사용자 몫은 `사용자 몫 미결` 표식으로 남긴다 — 그 표식이 있으면 연쇄 경계에서 멈춰 모아 묻는다.
+- **목록 변경** — 실행 중 목표 범위 안에서 milestone 을 쪼개거나 합치는 것은 Ruling 으로 적고 계속한다. 목표 범위 밖 milestone 을 더하는 것은 멈추고 묻는다(`--chained-from` 이 chain 밖 id 를 거부한다).
+- 목표가 milestone 하나로 닫히면 목표 층을 쓰지 않는다(`--chain` 없음).
+
+**펼치는 계획 — 갈래 층** (2026-11-18 M26 사용자 확정): 인터뷰에서 이 milestone 을 **펼칠지 단일로 갈지**를 정한다. 새 스킬·새 승인어가 아니라 이 인터뷰 안의 결정이다.
+- **펼침 판정** — 셋이 다 참일 때만 펼친다: ① 갈래가 둘 이상 ② 갈래끼리 파일과 개념의 소유를 미리 가를 수 있다 ③ 사용자가 갈래에 들어가 보고 말할 일이 있다. 하나라도 거짓이면 단일 계획이고, 병렬은 한 세션 안 implementer 워커(`## 배차 설계`)로 한다. 파일이 겹치는 무인 작업은 순차로 둔다 — 워크트리를 쓰는 이유는 「대화할 갈래」 하나뿐이다. 판정과 사유 한 줄을 §6 제시에 적는다.
+- **메인 계획서** — 갈래 목록(`## 갈래 목록` — 갈래마다 id·제목·완료 기준 한 줄·소유)과 통합 검증만 갖는다. 갈래의 step 은 펼치지 않는다. 눈으로 보는 판정이 필요한 갈래는 그 판정을 완료 기준에 넣는다(병합 대기 선언이 곧 사용자 확인이다). 갈래 work-id 는 `<milestone id>-<갈래 id>`, 브랜치는 그 소문자. ROADMAP 블록은 메인 milestone 하나다.
+- **소유 표는 메인만 고친다** — 갈래가 소유 밖을 바꿔야 하면 「계약 변경 요청」(`fanout.py request`)을 남기고 무관한 일을 계속한다. 메인이 계약을 고쳐 올리고 다른 갈래는 다음 step 착수의 rebase 로 받는다.
+
+**갈래 절차** — 펼친 갈래 세션의 첫 프롬프트가 「`.harness/fanout/branch.json` 전달물을 읽고 갈래 절차로 자기 계획서를 쓴다」이면 이 절이다. ① 전달물의 `title`·`dod`·`owns` 가 이 갈래의 milestone 이다 — 인터뷰는 그 안에서만, 사용자 몫 결정이 남으면 **그 탭에서** 묻는다 ② §3~§4 규약대로 갈래 계획서를 쓴다(`Files` 는 소유 안에서만 — 소유의 정본은 메인 계획서 `## 갈래 목록` 의 자기 행이고 전달물 `owns` 는 열 때의 사본이다. 계약 변경 `REQUEST-<n>.done` 을 받으면 base 를 rebase 해 그 행을 다시 읽는다) ③ 사용자 몫 결정이 다 풀렸으면 사용자에게 다시 묻지 않고 스스로 승인 등록한다 — `approve_harness_plan.py <plan> --root <갈래 워크트리> --work-id <milestone>-<갈래 id> --milestone-id <milestone> --changeset-path <path> --session-id <token> --fanned-from <메인 work-id>`. 메인 영수증의 갈래 목록에 없는 id 이거나, 메인 work 가 active 가 아니거나, 메인 등록부에 이 워크트리가 `running` 으로 없거나, 결정 로그에 `사용자 몫 미결` 이 남으면 거부된다 — 그때는 탭에서 묻고 멈춘다 ④ 승인 커밋 뒤 같은 턴에 `/harness-run`. 갈래는 `ROADMAP.md`·백로그·`HANDOFF.md` 를 쓰지 않고, `.harness/` 아래 파일은 레포가 추적하더라도 커밋하지 않는다(체크아웃 로컬 상태 — 흡수가 거부된다).
+
+리프 판정 — step 은 ① 한 coding pass 로 닫히고 ② 단일 커맨드·체크로 검증되고 ③ 한 모듈·파일셋만 건드리고 ④ 새 사용자 결정이 필요 없다. 4개 다 통과하면 더 안 쪼갠다. **자르는 방향은 세로다**: 스키마→로직→표면→테스트를 좁게 관통해 **끝까지 동작하는 경로 하나**가 leaf 이고, 그래서 leaf 하나가 닫히면 단독으로 보여줄 수 있다. 「모델 전부 → API 전부 → 화면 전부」 식 층별 분할은 이름 바꾸기 같은 **넓은 기계적 리팩터**에만 쓴다. ③ 의 「한 파일셋」은 세로 경로가 지나는 파일들이지 한 층의 파일들이 아니다.
+
+**`Risk: 위험` 의 정의(사용자 확정)** — 넷 중 하나면 위험, 아니면 `기계적`(명세 고정·git revert 로 복구), 기록만 만들면 `없음`:
+① 판정 장치를 바꾼다(가드·게이트·훅·검사기·스키마 검증) ② 레포 밖 부작용(배포·타 머신·외부 발송·크리덴셜·과금) ③ git revert 로 안 돌아온다(데이터 이동·삭제·마이그레이션·외부 상태) ④ 여러 레포에 걸친다. 등급은 검증 두께와 검증자 제안을 정하지 테스트 면제권이 아니다. **① 중에서도 자동 판정을 새로 들이는 leaf**(훅·분류·라우팅·게이트 신설)는 계획서에 세 가지를 더 적는다 — 비교선(규칙 또는 단순 분류기 · 추론 끈 소형 모델 · 현재 방식)을 같은 표본에서 · 임계값은 검증 표본에서 정하고 시험 표본의 오류율로 확인 · 처음엔 섀도(기록만, 실행은 기존 경로). 근거 kg `judgment-gate-service-design-procedure`. milestone = step ≥2 + 가로지르는 통합 검증 ≥1. **1 step = 1 응집 변경 = 1 커밋** — 검증이 여럿이어도 step 은 하나. 시간·세션 수로 크기를 재지 않는다.
+
+## 4. 계획서 — 결정 기록이다
+
+**계획서의 본체는 결정 로그다.** step 트리는 소진한 결정에서 파생되는 실행 순서이지 문서의 목적이 아니다. 그래서 크기는 결정의 수에 비례해야 한다 — **비례 검사(재정의)**: leaf 수가 결정 수(최소 1)의 4배를 넘으면 step 을 합치거나 빠진 결정을 찾는다. 배경 서술은 쓰지 않고 `docs/`·`research/` 링크로 뺀다. 스캐폴딩 절은 이 작업에 걸리는 도메인 결정만.
+
+`plans/<YYYY-MM-DD>-<milestone-id>-<slug>.md` — 템플릿은 **이 스킬 디렉터리의 `templates/PLAN_TEMPLATE.md`**(스킬 로드 시 표시되는 Base directory 아래. 레포에 남은 사본은 읽지 않는다).
+
+- 각 leaf: `Artifact`·`Risk`·정확한 `Files`·`Dependencies`·`Verify`·`Failure probe`·`Commit`. 사람이 눈으로 볼 산출물이면 `Verify` 에 스크린샷 경로 또는 URL+클릭 경로.
+- **`Verify` 는 테스트 이름과 단언으로 쓴다**: 동작을 바꾸는 leaf 는 `tests/<파일>::<함수> — <단언>` 과 그 파일을 `Files` 에. 테스트가 성립하지 않으면 `테스트 없음 — <사유> · <대신 확인할 명령>` 으로 명시(빈 칸·`pytest` 한 단어 금지). 버그 수정 leaf 는 **재현 테스트가 곧 Verify** 다. 테스트는 계획 단계에서 *이름*까지만 정하고 코드는 실행 때 워커가 쓴다 — 사람에게 테스트를 쓰게 하지 않는다. 승인 제시 때 사용자가 읽는 것은 이 줄이다. **테스트는 공개 경계(seam)에 건다**: Verify 가 가리키는 함수·명령·URL 은 바깥에서 부르는 인터페이스여야 하고, 내부 함수·private 상태·DB 직접 조회로 확인하는 테스트는 리팩터링에 깨지니 쓰지 않는다. 경계가 어디인지 애매하면 §2 에서 묻는다. **한 leaf 에 테스트 하나씩** — 테스트를 먼저 다 써 두고 구현을 뒤에 몰지 않는다(상상한 동작을 검사하게 된다).
+- `## 결정 로그` — §2 에서 소진한 결정을 전부 적는다. 없으면 "없음"(빈 절 금지). `## 스캐폴딩 결정` — 걸리는 도메인만 자기선언 + 검토 후 제외.
+- DoD 에 검증 1개 + 실패 모드 1개, 표면에 맞는 E2E(웹=브라우저 · CLI=실행+exit code · API=실요청 · 데이터=1회 구동).
+- **병렬로 쪼갠다** — step 트리는 `Files`(파일셋)와 `Dependencies` 로 **동시 집합(wave)** 이 나오게 분해한다(판정은 게이트 `derive_waves`). 동시 가능 leaf ≥2 이면 `## 배차 설계` 절 **필수**(없으면 FAIL · wave 의 worker 행이 leaf 수−1 미만이면 FAIL). worker 기본 = `implementer`(sonnet·medium), 부모 inline 은 판단이 남은 leaf 하나까지. 혼자 도는 작은 leaf(메인이 대상 파일을 이미 읽었고 파일 2개 이내·10분 이내 — `context/delegation.md` 「단독 배차 하한」)에는 worker 행을 적지 않는다 — 메인이 직접 한다(2026-11-18). 어려운 leaf 는 행에 값을 적어 올린다(`worker(sonnet, high)`·`worker(opus)` — 기준 `context/delegation.md` 「구현 워커의 모델·effort」). 외부 조사 spike 는 `researcher` 행으로 같은 wave 에 둔다. 파일이 달라도 이름·규약을 서로 맞춰야 하는 leaf 는 Dependencies 로 순차로 둔다 — 게이트는 파일 겹침만 본다. **워커는 커밋하지 않고 부모가 pathspec 커밋한다**(문법은 템플릿 머리말, 실행은 `harness-run/references/fanout.md`).
+- **탐색도 leaf 다** — 모르는 것은 「다음 1~2 leaf 만」이 아니라 **독립 spike 를 나란히 leaf 로** 세운다(각 Artifact = 보고서, Verify = 실행 출력; 파일이 안 겹치니 같은 wave). 결과에 따라 갈리는 뒤쪽 leaf 만 finding 큐.
+- **펼친 계획이면 `## 갈래 목록` 절** — 행 문법은 템플릿 머리말, 게이트가 갈래 둘 미만·소유 겹침을 막는다. 배차 행의 격리 칸은 `none` 만 쓴다(워크트리 격리 행은 2026-11-18 이후 계획서에서 게이트가 거부한다).
+- 기계 lint: `python "$HARNESS_SCRIPTS/validate_plan_gate.py" <plan> --pre-approval`. 게이트가 말하는 것을 수기로 복창하지 않는다.
+
+**계획서는 장부다** — 실행 중 step 을 끝낼 때마다 `- [ ]`→`- [x]`. 체크박스가 진행의 쓰기 정본이고, 승인 hash 는 체크박스와 append-only 절(`## finding 큐`·`## 진행 로그`)을 봉인하지 않는다. 그 밖의 본문·절 제목은 승인 후 불변.
+
+## 5. fresh 검증자 — 사용자가 승인어로 고른다
+
+검증자는 **자동으로 붙지 않는다**(사용자 확정). §6 제시에 **위험 leaf 수와 사유**(§3 정의 ①~④ 중 무엇)를 한 줄로 보여주고, 사용자가 승인어 `검증ㄱ` 을 고르면 그때 1회 스폰한다: `Agent(subagent_type="plan-verifier")` — **`model` 인자 없음**(정의 = opus). 검증 뒤 처분을 반영해 다시 제시하고 그 턴의 `ㄱㄱ`/`새로ㄱ` 로 승인받는다. 사용자가 `ㄱㄱ` 를 바로 고르면 `## 검증자 지적 처분` 에 `none — 사용자 선택(위험 leaf n)` 한 줄.
+
+처분(반영/부분/기각 + 이유)을 같은 절에 적는다. **기각 0 은 대조를 안 했다는 뜻이다** — 지적마다 계획서 원문·레포 실물·§2 사용자 결정과 대조한 흔적을 남긴다.
+
+**지적은 판결이 아니라 주장이다.** 검증자는 대화를 못 봤다. 반영 전에 지적마다 계획서 원문·레포 실물·§2 에서 확정한 사용자 결정과 대조한다. 사용자가 이미 정한 것, 검증자가 못 본 맥락에서 이미 옳은 것을 지적이 뒤집으면 **기각한다** — 기각은 정상 처분이고 이유 한 줄이면 된다. 막는 지적도 이 대조를 통과한 것만 반영 의무다.
+
+## 6. 승인
+
+멀티스텝은 **정지·제시·승인**. 단일 step·가벼운 작업은 "produce 끝 → run 진입" 한 줄 통지 후 통과.
+
+**실행 모델은 계획 내용으로 고른다 — 지금 세션의 모델을 되돌려주지 않는다**. 기준은 step 트리의 `Risk` 와 남은 판단 밀도(자기 런타임의 서브에이전트 규약 — 모델 선택 표):
+- 전 leaf `기계적`/`없음` + 명세 고정 → **sonnet**
+- `위험` leaf ≥1, 또는 결정은 소진됐어도 구현 선택지가 넓은 leaf 가 있음 → **opus**
+- 틀리면 하류를 오염시키는 판단이 step 안에 남음 → **fable** (드물다 — §2 가 결정을 소진했으면 대개 아니다)
+
+값을 계획서 `run 전 scope 결정` 의 `실행 모델:` 줄에 근거 한 줄과 함께 적는다. `새로ㄱ` 과 `fanout.py open` 은 그 값을 `--model` 로 **반드시** 넘긴다 — 생략하면 발사 스크립트가 마지막 사용 모델로 띄운다. codex 런타임이면 모델을 생략한다(`~/.codex/config.toml` 기본값이 이긴다).
+
+**제시** — plan doc 을 던지지 말고: ① 산문 요약(무엇을·왜) ② step 트리(+verify) + **wave 표**(동시 집합별 leaf 와 worker 수) + 목표 층이면 **분할 사유 한 줄**(§3 ①~④) + **목표 목록 표**(후속 milestone 의 id·제목·DoD 한 줄 — 「이 목록이 승인과 함께 무개입으로 이어진다」고 적는다) ③ 핵심 결정·**위험 leaf n개(사유 ①~④)**·중단점 + 검증자 처분 한 줄 + **실행 모델과 근거** + **마감 감사 제안** — `마감 감사: 함 | 안 함 — <근거>`(추천 기준: 장치 신설·개명 · 교차 레포 · 위험 leaf ≥1 중 하나면 `함`. 해당 없으면 `안 함`. 사용자가 승인어와 함께 「감사 넣고」·「감사 빼고」로 바꿀 수 있고, 말이 없으면 제안값. 확정값을 계획서 `run 전 scope 결정` 의 `마감 감사:` 줄에 적는다 — 사용자 결정) + **실행 레포 한 줄** — `실행 레포: <$HARNESS_ROOT 레포 이름> (<사유>)`. 지금 세션의 레포와 다르면 사유에 「소유 레포 — <부품> 원본이 거기 있다」를, 다른 레포를 건드리는 step 이 있으면 「교차: <레포> step-N」을 붙인다(사용자 요구 — `새로ㄱ`·`fanout.py open` 은 이 레포에서 세션을 연다) + 펼쳤으면 **펼침 판정 한 줄**(①~③ 각각 왜 참인가)과 갈래 목록 표 ④ 계획서 경로 ⑤ 마지막 줄에 평문으로 **"승인은 `ㄱㄱ`(같은 턴 실행) · `새로ㄱ`(승인 등록 후 새 세션 발사) · `검증ㄱ`(plan-verifier 를 먼저 붙이고 다시 제시) 중 하나로"** — 펼친 계획도 같은 승인어다. 갈래 목록 승인이 갈래들의 계획 승인 근거가 되므로 따로 묻는 승인어는 없다 — 같은 턴에 AskUserQuestion 을 겹치지 않는다.
+
+**승인 후 (같은 턴)**:
+1. 사용자가 승인어와 함께 마감 감사를 바꿨으면 **먼저** 계획서 `마감 감사:` 줄을 고친다(승인 해시가 본문을 봉인한다). 그다음 `python "$HARNESS_SCRIPTS/approve_harness_plan.py" <plan> --root "$HARNESS_ROOT" --work-id <id> --milestone-id <id> --changeset-path <path> --session-id <runtime-token>` — 소유 레포가 cwd 와 다르면 `--root` 에 그 레포. 스크립트가 초점을 자동 set 한다. 목표 층이면 `--chain <후속 id 쉼표 목록>` 을 붙인다 — 제시한 목표 목록 표의 id 그대로, 보여주지 않은 id 는 넣지 않는다. 펼친 계획이면 `--fanout <갈래 id 쉼표 목록>` — 제시한 갈래 목록 표의 id 그대로(갈래의 `--fanned-from` 자기 승인이 이 목록만 근거로 삼는다. `## 갈래 목록` 행과 집합이 다르면 승인이 거부된다).
+2. plan doc(+ROADMAP marker)을 `docs(plan): <milestone 제목> 계획 승인` **단독 커밋·push** (ROADMAP 마커는 `status="active"` — 허용 값 active·pending·blocked·completed·skipped·dropped·archived, `in_progress` 는 complete 가 거부) — 영수증은 gitignored 라 이 커밋이 git 이력의 승인 기준점이다.
+3. **승인어로 갈라진다. 어느 쪽이든 이 턴은 여기서 끝나지 않는다** — 둘 다 마지막에 할 일이 하나씩 더 있다.
+   - `ㄱㄱ` → **같은 턴에 `/harness-run` 으로 step-1 착수**. "승인되었다" 보고만 하고 턴을 끝내지 않는다. 펼친 계획이면 착수 = `/harness-run` 「메인 통합자」 절 — `fanout.py open` 으로 갈래를 띄운 뒤 `fanout.py wait`.
+   - `새로ㄱ` → ① 첫 프롬프트를 파일로 쓴다(`--prompt-file` 용 — Git Bash 에서 `--prompt '/harness-run …'` 은 MSYS 가 `/harness-run` 을 경로로 바꿔 버린다. 스크립트가 탐지해 거부한다) ② **같은 턴에 `/session-end --relay`(넘기고 마감 — 약식)를 끝까지 실행한다.** 발사 명령으로 `python "$HARNESS_SCRIPTS/launch_session.py" --worktree-path "$HARNESS_ROOT" --prompt-file <프롬프트 파일> --model <계획서의 실행 모델>` 을 넘긴다 — session-end 가 HANDOFF 병합·push 뒤에 이 명령을 실행한다(직접 먼저 발사하지 않는다). `--repo` 를 쓸 때는 **레포명(또는 레포명/갈래)** 이지 경로가 아니다(경로를 주면 'worktree 를 찾지 못함').
+
+**새 세션 발사(`새로ㄱ`)의 종료 게이트** — `/session-end --relay` 가 약식으로 데이터 레포 점검, 이 세션에서 사용자가 넣어 달라고 한 인입, HANDOFF 병합(승인 커밋을 최근 작업 줄로, 끝낸 할 일은 `완료:` 로)·커밋·push 를 한 **뒤에** 위 명령으로 새 세션을 띄운다(사용자 결정 — 문서 위생·CLAUDE.md 점검·요약은 새 세션이 끝날 때 한다 · 순서는 2026-11-18 「HANDOFF 먼저, 발사 나중」으로 고정). 앞서 직접 HANDOFF 를 고쳤거나 커밋했더라도 이 절차를 대체한 것으로 세지 않는다. 최종 응답에 `[handoff]` 결과 줄과 `--relay` 의 한 줄(발사 결과 포함)을 포함한다.
+
+미해결 사용자 결정이 남았으면 승인부터 받지 않는다 — §2 로 돌아간다.
 
 ## 배치 규약 — 어디에 무엇이 사는가 (정본)
 
-"이번 run 이 무엇을 만들지 선언"하는 의식도, 산출물 종류별 절차 분기도 없다(C10). 보는 것은 하나 — **어디에 무엇이 사는가.**
-
-| 위치 | 무엇이 사는가 | 수명 |
+| 위치 | 무엇 | 수명 |
 |---|---|---|
-| `CLAUDE.md` 「북극성」 절 (맨 위) | 북극성 — 사용자 소유, 방향만 (구 `OBJECTIVE.md` 흡수, C4) | living |
-| `ROADMAP.md` (루트) | 상태판 — milestone 상태, ≤150줄 | living |
-| `운영지도.md` (루트) | 운영 배선도 — 세션 생애주기·훅 배선·파일 파이프라인 (있는 레포만) | living |
-| `plans/` (루트) | **현재·미래 계획만** — 작업 단위 계획서 `plans/<date>-<milestone-id>-<slug>.md` | living |
-| `research/` (루트) | 리서치 산출물 `<date>-<소비처>-<slug>.md` — 양식 자유·저장 의무·소비처 백링크 | record |
-| `archive/` (루트) | 완료·동결 기록 — `archive/plans/` (milestone 완료 시 이동)·은퇴 산출물 | record |
-| `archive/reports/` | **최종 보고서** `<date>-<id>-<slug>.md` — 완료 의식 정본(/harness-done, 템플릿 `templates/REPORT_TEMPLATE.md`). ⚠ **git 추적 필수** | record |
-| `changesets/` | tooling 변경 기록 (milestone 당 디렉터리 1개 — step 은 README 의 절, 기록-합본) | record |
-| `docs/` | 도메인 문서 — PRD·ARCHITECTURE·ADR·BACKLOG·INDEX 등 (계획·리서치는 두지 않음) | mixed |
-| `evidence/` | 측정·ledger | record |
-| `.env`·시크릿 | 루트 `.env` (gitignore 필수) — 값 출력·커밋·로그 노출 금지 | local |
-| 잡파일·임시 산출물 | **레포에 두지 않음** — 세션 scratchpad 사용 | ephemeral |
+| `CLAUDE.md` 「북극성」 절 | 방향 — 사용자 소유 | living |
+| `ROADMAP.md` | 상태판, ≤150줄 | living |
+| `plans/` | 현재·미래 계획서 | living → 완료 시 `archive/plans/` |
+| `research/` | 리서치 `<date>-<소비처>-<slug>.md` | record |
+| `archive/reports/` | 완료 노트(`/harness-done`) — git 추적 필수 | record |
+| `changesets/` | 변경 기록 — milestone 당 디렉터리 1개, step 은 README 의 절 | record |
+| `docs/` | 도메인 문서(PRD·ADR·BACKLOG) | mixed |
+| 잡파일·임시 산출물 | 레포에 두지 않음 — 세션 scratchpad | ephemeral |
 
-⚠ **`archive/` gitignore 충돌**: `report_close.py` 가 ignore 경로 보고서를 거부한다(실측 유실 19건). 걸리면 `python "$HARNESS_SCRIPTS/fix_report_durability.py" --root . --apply`(플릿 전체 `--fleet ~/projects`).
+`archive/` 가 gitignore 에 걸려 `report_close` 가 거부하면 `python "$HARNESS_SCRIPTS/fix_report_durability.py" --root "$HARNESS_ROOT" --apply`.
 
-규칙: 폴더는 **lazy 생성**. 완료된 계획서는 완료 경계에 `archive/plans/` 로 이동, 이동 후 옛 백링크는 정정하지 않는다(record 동결). 구 배치(`docs/{plans,horizons,research,market}/`)는 폐지.
+## Codex 에서
 
-**무엇이 남는가** (기록 위치만 — 기본값 = changeset):
-
-| 남는 것 | 기록 위치 |
-|---|---|
-| **변경**(코드·스킬·스크립트·문서) ★기본 | `changesets/<YYYYMMDD>-<slug>/` + 인덱스 — **milestone 당 디렉터리 1개**, step 은 README 의 절 |
-| 분석 노트 / experiment | `references/<repo>/ANALYSIS.md`·`experiments/` + 인덱스 |
-| 리서치 | `research/<date>-<소비처>-<slug>.md` |
-
-- `.harness/manifest.json` 의 `packs_added` 는 무엇을 받았는지의 기록이지 레포 분류가 아니다 — run 판정에 쓰지 않는다(OI1).
-
----
-
-## 탐색 — 계획 착수 진입 조건
-
-계획(milestone 선택·논의·분해)에 들어가기 전에 차례로 확인한다. 이 구간의 쓰기는 리서치 산출물 저장뿐이다.
-
-**1. 체크아웃 최신성 (첫 도구 호출 — 다기기 레포 필수)**: `python "$HARNESS_SCRIPTS/check_checkout_freshness.py" --root . --ttl 300`. **FAIL 이면 동기화 후 탐색** — 낡은 체크아웃은 기각된 설계를 되살린다. WARN 은 진행 가능하나 최신 보장 아님. "캐시" 출력이면 기각·회귀 단정 전 `--ttl 0` 재확인. **배포본-소스 어긋남을 "배포 회귀"로 단정하기 전에도 이 검사 먼저** — 소스 쪽 설계 변경일 수 있다.
-
-**2. 필수 읽기**: `ROADMAP.md` + `CLAUDE.md`. 산출물 타입별 추가 읽기:
-
-| 산출물 | 추가 읽기 |
-|------|---------|
-| changeset | 관련 `changesets/*/README.md` + 영향받는 `SKILL.md`/script/test/deploy 문서 |
-| reference 분석/experiment | `docs/00-INDEX.md` + 관련 `references/*/ANALYSIS.md` |
-| product 기능/화면 | `docs/PRD.md` + `docs/ARCHITECTURE.md` + (web) 루트 `DESIGN.md` 또는 token SSOT / (mobile) `docs/UI_GUIDE.md` + `docs/adr/` |
-
-**3. 축적 데이터 회수 (새 기획 지점 진입 시)** — 에이전트는 아는 만큼만 계획에 담으므로, `research/` 선조회(「계획 작성」 리서치 항목이 정본)와 함께 askewly data 통합 회수를 1회 돌려 과거 결정 규칙·도구·실측 기록을 계획 재료로 가져온다:
-
-```bash
-[ -f ~/projects/the-notes-repo/bin/data.py ] && python ~/projects/the-notes-repo/bin/data.py recall "<이번 작업 주제>" --src agent --limit 3 || true
-```
-
-5축(일반지식·도구·나·세션기록·디자인) 라벨 병합 결과에서 이번 계획과 맞닿는 항목을 결정 로그·리스크 설계에 반영한다. 경로가 없는 환경이면 가드가 조용히 생략한다(설치 불요 — 선택 배선).
-
-**공통 계층 — 2계층 (C4)**: `CLAUDE.md` 「북극성」 절(방향+규칙) → 작업 단위 계획서 `plans/<date>-<milestone-id>-<slug>.md`. horizon 층은 폐지. 새 에이전트는 이 둘과 `ROADMAP.md` 를 읽고 이어간다. **새 방향·신규 제품 기획은 계획서 생략 불가** — 「계획 작성」으로 설계 먼저.
-
-## milestone 선택
-
-`ROADMAP.md` 를 읽고 이번 run 의 **target milestone** 을 확정한다.
-
-- active milestone 은 marker `status="active"` 만. `pending`/`blocked`/`error` 는 runnable 이 아니다.
-- active 1개면 기본 target. 단 `Blocked by:` 또는 blocked·error 잔존 시 진행하지 말고 blocker 해소를 먼저 제시.
-- active 여러 개면 `priority`·사용자 요청·blocker·다음 pending 을 대조해 1개 선택.
-- 선택한 milestone 의 `DoD`·`Evidence`·`Gap` 을 계획·step 설계에 반영.
-- 요청이 어떤 active 와도 부정합하면: **먼저 리프 판정으로 milestone-grade / step-grade 를 가른다.** step-grade(단일 changeset·좁은 수정)면 **새 milestone 을 만들지 않고** 기존 `Gap` 채우기 또는 *maintenance* 로 changeset 기록에만 남긴다 — milestone 제조 금지. milestone-grade(≥2 독립 step + 통합 검증 + 단독 capability)일 때만 「non-trivial 판정」을 거쳐 새 milestone 제안.
-- active 0개면 새 구현에 들어가지 말고 `roadmap_sync.py gap-check` 로 gap 확인 후 멈춘다. 단 사용자가 이번 메시지에서 continuation("이어가"·"계속"·"run next"·후보 승격)을 명시했으면 pending/Next Candidate 1개를 active 로 승격 후 이 절 재시작. **새 milestone 을 *작성*해야 하면 「계획 작성」으로.**
-- 정합성이 애매하면 추정 진행하지 말고 어느 milestone 에 연결할지 한 줄로 묻는다.
-- **legacy ROADMAP**: unchecked 는 있는데 `harness:milestone` marker 가 없거나 active 0 = legacy. 체크리스트를 곧바로 실행 대상으로 보지 말 것. `roadmap_sync.py status` → 후보 제안 → **사용자 승인 후에만** marker 승격. 승인 전 정규화·구현·커밋 금지.
-
-### 위계·스케일 루브릭 (리프 판정)
-
-**용어 사전 (예약어):** 레벨 명칭은 **북극성 / Milestone / Step** + **changeset** 만 — 대체어·새 약어 발명 금지, 전 표면 동일 명칭. milestone ID = **`M<순번>`**(레포 전역 순번, 2026-07-31 사용자 확정 — 완료 ID 는 기록 동결), **ID 단독 언급 금지 — 항상 제목 동반**. step = plan doc 의 `step-N`. ~~Horizon~~ 은 폐지된 레벨.
-
-북극성 → milestone → step 으로 분해한다. 규모는 **시간이 아니라 관측 가능한 테스트**로 가른다. 핵심은 **리프 판정** = "그만 쪼개라"의 정지 조건:
-
-| 레이어 | 판정 테스트 | status 위치 |
-|------|---------|-----------|
-| **step (leaf)** | ① 한 coding pass 로 닫힌다 ② 단일 커맨드·체크 하나로 검증된다 ③ 한 레이어·모듈·파일셋만 건드린다 ④ 새 사용자 결정이 필요 없다 — **4개 다 충족 → leaf, 더 안 쪼갠다** | plan doc 의 step 체크박스 |
-| **milestone** | step ≥2 + 가로지르는 통합 검증 ≥1 + 단독 capability·증거로 설명됨 (+ 사용자 결정을 부를 수 있음) → step 으로 쪼갠다 | ROADMAP `harness:milestone` (DoD/Evidence/Gap) |
-
-위에서 아래로 적용해, 통과 못 하는 노드는 한 단계 더 쪼갠다. milestone DoD=통합 증거, step AC=구체 커맨드/파일 검증.
-
-**크기 회고 (완료 경계)**: milestone 이 changeset 1개로 닫혔으면 그건 step 이었다 — 완료 보고에 라벨 정합 적발 한 줄.
-
-⚠ **리프·규모 판정에 세션·시간 척도 금지**(예외 없음). 그릇 규칙(목표 전체·발명 금지·쪼개 팔기 금지)은 「계획 분해」 1 이 소유 — 무감독 길이는 목표 크기의 결과다(2026-07-31 사용자 결정).
-
----
-
-## 논의 — 진입 지도
-
-구체화·결정 사항을 사용자에게 제시하고 합의. Claude 는 AskUserQuestion 으로 묶어 묻고, Codex 는 합리적 기본값으로 진행하되 결정 없이 위험한 경우만 평문 한 줄 질문.
-
-**두 방법 (FA1)**: 도메인·행동·취향=사용자 소유 → **캐묻는다(EXTRACT, 열린 질문)** · 기술=에이전트 → **제시한다(PRESENT = 논의 루프)**. load-bearing 에 "합리적 기본값" 제3선택지는 없다. non-trivial 진입 시 `references/elicit.md` 읽기.
-
-**완료 상황 인터뷰 — 상시 (M25 2026-08-22)**: milestone 계획에 착수하면 **DoD 초안을 쓰기 전에** "이 작업이 끝나면 어떤 상황이 되었으면 좋겠나" 1문을 먼저 묻고, 그 답을 검증 가능한 DoD 로 번역한다. 조건 판정 없이 상시다 — "추론할 근거가 있으면 생략" 류의 조건은 두지 않는다(조건을 두면 정지를 줄이려는 유인이 늘 생략 쪽으로 답한다 — D3 2026-08-22 사용자 확정). 무엇이 완료인가는 사용자 소유 판단이고, 이 질문의 답이 승인 제시 ⑤′ 되읽기로 되돌아온다.
-
-**이 순간 한 번만 판정한다.** 아래 lane 은 같은 시점에 발화하므로 차례로 훑지 말고 해당 lane 만. 복수 해당이면 위에서부터.
-
-| 무엇이 비었나 | lane | 하는 일 |
-|---|---|---|
-| 「북극성」 절·milestone 이 없거나 새 방향 | **계획 작성** | 북극성·Milestone 설계 (사용자 토론 — 소유권 경계) |
-| **non-trivial**(아래 기준)인데 정체성 문서가 비었거나 미해결 결정 | **spec readiness** | 인터뷰→논의→기록 |
-| 위 둘은 찼고 작업이 non-trivial | **non-trivial 판정** | 계획 내용 결정 |
-| 위 셋 다 아님 (typo·marker·기계적 이어가기) | — | 한 줄 통과 후 「계획 분해」로 |
-
-### spec readiness (정체성·결정 채우기) ★
-
-> 정체성·PRD·TRD·핵심 결정을 채우는 단계의 소유자는 이 스킬이다(bootstrap 은 빈 스켈레톤만). step 설계·구현보다 먼저.
-
-**트리거**: **이번 작업이 실제로 필요로 하는** 정체성 문서가 **없음/스켈레톤**이거나 **미해결 사용자 결정**이 있으면 발화.
-
-어느 문서가 필요한지는 레포 분류가 아니라 **작업**이 정한다(OI1): 화면·기능 → `docs/PRD.md`+`docs/ARCHITECTURE.md`(+웹이면 `DESIGN.md` 또는 token SSOT) · 반복 업무 자동화 → `docs/DOMAIN.md`+`config/sources.md` · 레포 분석 → `docs/00-INDEX.md` · 도구·런타임 수리 → `CLAUDE.md`(source-of-truth·deploy 계약). 코어 밖 문서는 `--add <pack>` 으로 그 시점에 깐다.
-
-절차: **스캐폴드 → (요구사항 불명확 시) 발견 인터뷰 → 논의 루프 → PRD/ADR 기록 → `docs(spec):` 커밋.** 논의 루프 = 결정 하나마다 [선택지+추천+근거] 제시, 사용자가 고른 것만 기록(추정으로 채우지 않는다). 이미 충실하면 한 줄 통과("spec 충분 — 실행 진입").
-
-### 계획 작성 (북극성·Milestone) ★
-
-**트리거** — 아래 중 하나면 해당 단계(각 단계 = 논의 루프 → `templates/` 작성 → `docs(spec):` 커밋):
-- 「북극성」 절 없음/비어 있음 → **북극성 세우기 최우선** — 다른 단계보다 먼저, 본문은 한국어.
-- active 0 + 사용자가 새 방향 원함 → Milestone 설계(리프 판정으로 milestone-grade 확인).
-- 새 기획 지점 진입 시 **재료 수집(리서치)이 기본** — 에이전트는 아는 만큼만 계획에 담으므로 조사가 먼저다. 생략은 "조사 불요 — <이유>" 명시 시만. 산출물 `research/<YYYY-MM-DD>-<소비처>-<slug>.md`.
-  - **리서치 규율 정본 = research-playbook-template** (`~/projects/the-orchestration-repo/docs/agent-os/templates/research-playbook-template.md`) — 있으면 복사 적용해 scope·질문·E-level(증거 등급 E1~E5)·source-map(URL·접근일·재검증)·envelope 로 규율한다. 경로가 없는 환경이면 자유 양식 + 전 인용에 출처 URL·접근일.
-  - **착수 전 `research/` 선조회 의무 (2026-08-04 M12)** — 리서치 여부·생략 판단과 무관하게 새 기획 지점 진입 시 `research/` 를 Glob 으로 훑어 이번 주제를 덮는 기존 문서가 있는지 먼저 본다. 있으면 재리서치 대신 **인용 + 증분 갱신**(record 원본은 동결 — 갱신분은 새 문서로, 기존 문서 백링크). 왜: 조회 규약 없는 저장은 쓰기 전용이 된다(실측 같은 대상 3회 재조사).
-
-**북극성 소유권 (2026-07-19 사용자 확정):** 문구는 **사용자 소유** — 에이전트는 후보 제안만, **명시 승인 후에만 기록**. 변경은 방향 자체가 바뀔 때만(Milestone 완료로 갱신 금지). 기계로 보호하지 않는다(ADR 0008).
-
-**북극성 절 양식 정본 = 부트스트랩 스켈레톤**(`init-ai-readiness.sh`), 파서는 Stop 훅 `plan_position_stop`. 지킬 것 하나: **북극성 문구를 인용구·하위 제목 안에 넣지 않는다**(첫 일반 문단 첫 문장이 매 턴 표시된다).
-
-**후보 백로그**: `ROADMAP.md` 의 `pending` 마커 — **순서는 사용자 소유**, 에이전트는 후보·근거 제안만.
-
-기존 milestone 이어가기·후보 승격은 여기로 오지 않고, cascade 없는 레포는 건너뛴다. 작성 후 「milestone 선택」→「계획 분해」로.
-
-### non-trivial 판정과 계획 내용
-
-**non-trivial 기준** — 하나라도 해당: 여러 task/file/session 에 걸침 · product behavior·API·data model·권한·결제·외부 연동·배포면 변경 · security·secret·supply chain·protected file 영향 · 기존 spec/ROADMAP/ADR/과거 판단과 충돌 가능성 · 외부 제품·사례의 반영 여부 판단 필요. 반대로 typo·format·README/CHANGELOG · marker/status 갱신 · 정답이 고정된 좁은 버그 수정 · 기계적 이어가기는 가볍게(진입 지도 마지막 행).
-
-non-trivial 이면 아래를 **판단해 결정하고 결과만 적는다** — 안 하면 실제로 틀리는 것들이다.
-
-- **DoD 에 검증 1개 + 실패 모드 1개.** source 변경은 lint/test/smoke/review 중 하나 이상을 DoD 에 넣고, happy-path 만으로 완료 처리하지 않는다 — 없는 source·실패 커맨드·auth 경계·빈 데이터·rollback·배포 미반영 중 하나를 확인. 실패 경로 확인 불가면 결과는 partial.
-- **표면에 맞는 E2E 구동이 DoD 필수.** lint/test 통과로 "됐다" 하지 않는다. **웹/UI** → 개발서버+실제 브라우저 · **CLI/스크립트** → 실행+출력·exit code · **API** → 실요청+응답·부작용 · **데이터/배치** → 1회 구동+행수·스키마. 구동 불가 환경이면 그 사실과 대체 검증 명시, 결과는 partial.
-- **위임 여부를 명시 결정** — `use | skip | ask_user` + 이유. 비용·원격·권한·대규모 병렬화는 `ask_user`. 위임 시 child 결과를 완료로 믿지 말고 parent 가 검증해 evidence ledger 로 닫는다. 위임 규약은 자기 런타임의 서브에이전트 문서를 따른다.
-- **spec/ADR/ROADMAP 반영 변경이 있으면 적고, 없으면 생략 이유를 적는다.**
-- **secret 은 읽지 않는다** — `.env`·토큰 확인 필요 시 Risk Gate 로 정지.
-- **high-risk(보안·결제·마이그레이션·대규모 diff·배포면)** 는 완료 시 spec/quality 축 분리 판정 + near-miss 기록. low-risk 는 단일 판정.
-- **repo 가 크면 scoped `AGENTS.md`/`CLAUDE.md` 존재 확인**, 없으면 final 에 context landmark 후보로.
-
----
-
-## 계획 분해 (scope 결정 + plan doc)
-
-milestone 이 여러 step 이거나 세션을 넘겨 이어받을 작업이면, 실행 전에:
-
-1. **scope 경계** — 이번 run 이 닫을 범위 + 중단점(검증 PASS·blocked·budget). 결정 지점 3 facet: milestone 선택=어느 milestone · 여기=어디까지 · 연쇄(/harness-done)=다음 승격. scope 가 사용자 소유면 논의 루프로 묻는다. **그릇 기본값 = 사용자가 준 목표 전체 (2026-07-31 사용자 결정)**: 목표가 여러 milestone 을 품으면 연쇄를 전부 펼쳐 결정 소진을 연쇄 전 범위로 하고, 승인 1회에 `--chain` 으로 등록한다. 탐색적이라 끝이 안 보이면 보이는 데까지 담고 예상 정지 지점 명시.
-2. **계획 분해 → plan doc** — 리프 판정으로 leaf 까지 쪼개 `plans/<YYYY-MM-DD>-<milestone-id>-<slug>.md`(템플릿 `templates/PLAN_TEMPLATE.md` — 없으면 `bash ~/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh . --add cascade`)에 박는다. 각 leaf 는 승인 전에 `Artifact`·`Risk`·정확한 `Files`·`Dependencies`·`Verify`·`Failure probe`·`Commit` 완비. plan 전체에 `execution mode: continuous`·hard-stop policy·범위/중단점(절 제목 `## run 전 scope 결정`)·rollback/cleanup. 실행은 scaffold 를 재해석하지 않고 구현 세부만 보충. 위계 섹션은 「북극성」 절로 백링크.
-   - **장부 권위 (2026-07-22 사용자 확정)**: plan doc 은 *에이전트가 자기 진행을 체크·기록하며 나아가는 장부*다. step 을 끝낼 때마다 `- [ ]`→`- [x]` — **체크박스가 진행의 쓰기 정본**, 승인 hash 는 체크박스 상태를 봉인하지 않는다(MM7).
-   - 계약 본문(step 정의·Files·Verify·범위·중단점)은 승인 후 불변. `.harness/work.json` 의 `steps[]` 는 체크박스에서 파생되는 포인터 — 어긋나면 plan 이 이긴다. 이 plan doc 으로 새 에이전트가 몇 시간 이어받는다.
-   - **`Dependencies:` 는 기계 판독된다 (OI2).** 문법 정본 `templates/PLAN_TEMPLATE.md` 머리말. `validate_plan_gate.py` 가 순환·미아 참조를 잡고, 다음 착수 가능 leaf 와 동시 가능 집합이 파생된다. 횡단 단계(배포·출고·재생성)는 `## 재생성 장벽` 절에.
-3. **결정 사전 소진 (plan-hardening)** — `## 결정 로그` 에 **사용자 소유 결정**을 전부 나열해 계획 단계에서 매듭. 없으면 "없음" 명시(빈 섹션 금지). **승인 후에는 예상 밖 중요 결정(신규 리스크·스코프 변경·크레덴셜)이 아닌 한 추가 질문 없이 무중단 진행.**
-   - **표면 열거 → 소진 (FA1)**: manifest + 4렌즈(구조/행동/기술/계약) 전수 열거 → 방화벽(근거됨→실현 / 튜닝값→기본값 / **assumed 만 질문**). **assumed 잔존 = `resolved` 불가.** 상세 `references/elicit.md`.
-3-b. **배차 설계 (선택 절 — M18 2026-08-14 · M23 2026-08-22 확장)** — 동시 가능 leaf ≥2 **또는 단가 이득**(명세 고정 + Risk `기계적`/`없음` 인 구현 노동은 순차라도 하위 모델 워커가 기본 — 2026-08-22 사용자, 정본 `delegation.md` 「단가 이득」)이 있으면 plan doc 에 `## 배차 설계` 절을 쓴다. 절 문법·행 문법의 정본은 `templates/PLAN_TEMPLATE.md` 머리말 — 핵심 둘만 여기 적는다: ① worker 행이 있으면 **`- 계획 모델:` 줄 필수**(게이트가 워커 모델 ≤ 계획 모델 상한을 검사 — sonnet 계획이 opus 워커를 부리는 역전 차단, 발효 2026-08-22) ② 절이 없으면 실행은 전부 인라인(현행 유지). 소비는 `/harness-run` fan-out·워커 배차 절.
-4. **아는 만큼만 펼친다** — 탐색적 작업은 다음 1~2 leaf 만 확정하고 나머지는 finding 큐로. up-front 완전 분해 강요 금지.
-5. **면제 + 과분해 금지**: 단일 step·가벼운 작업, 분석(1 ref=1 step)은 평면 — 재귀 면제. **★기본 단위 = 1 step = 1 응집 변경 = 1 커밋.** 한 응집 변경이면 파일·검증이 여럿이어도 1 step — **여러 검증 단계 ≠ 여러 step**(검증은 Verification 체크리스트로). 기록 위치·단위는 배치 규약 「무엇이 남는가」 표가 정본(OI5 — 재서술 않음, 2026-08-15 M20 통합). plan doc·milestone 은 **≥2 독립 step + 통합 검증**일 때만. 한 step 을 4-leaf 로 펴는 건 과분해(F2/T3).
-6. **plan 기계 lint** — multi-step 이면 실행 전 `python "$HARNESS_SCRIPTS/validate_plan_gate.py" <plan>`. 필수 항목·placeholder·의존 그래프는 **게이트가 말해준다** — 수기 복창하지 않는다.
-   - **승인 전 점검은 `--pre-approval` 로 돌린다** (M6 2026-08-20). 승인 전 계획서는 정의상 draft 라 그냥 돌리면 게이트가 **항상 빨갛고**, 그래서 "Status 하나만 남고 나머지는 통과"라는 판정에 사람이 매번 꼈다 — 그 문장에 진짜 위반이 섞이면 그대로 넘어간다. 이 플래그는 **Status 값 판정 하나만** 면제한다: `Status:` 줄 부재·필수 항목 결손·Risk 어휘 위반·결정 로그 미소진은 플래그가 있어도 FAIL 이다. 승인 등록(`approve_harness_plan.py`)에는 흘리지 않는다 — 거기서는 승인 어휘를 실제로 요구한다.
-
-**스캐폴딩 결정 (CS6→HQ2).**
-- plan doc 의 `## 스캐폴딩 결정` 은 3층: 범용 코어 3(`source-of-truth`·`검증`·`배포/운영`) / 자기선언 도메인(선언한 것 전부 채움 — 빈 값=FAIL) / `- 검토 후 제외:` 1줄. `validate_plan_gate` 가 기계 검증.
-- 미결 도메인은 인터뷰로 전부 소진한 뒤에만 승인 요청. **구현 중 새 사용자 소유 결정 발견 = 설계 실패로 계수**(`ledger_append.py interruption --reason decision_required`).
-- **승인은 계획서 전체 단위** — 부분-위임 폐지(2026-07-21). 작아 보이면 사용자가 "확장"으로 답한다.
-- 3층 정의·검증 문법의 정본은 `validate_plan_gate.py` 와 `templates/PLAN_TEMPLATE.md` 머리말(사본 금지).
-
-## 승인 게이트
-
-**멀티스텝이면 기본 정지·제시·승인; 단일/가벼움이면 통과.**
-
-- **fresh 계획 검증자 (FA1)** — 멀티스텝은 승인 요청 전 1회: **`plan-verifier` 정의를 그 런타임의 위임 경로로 1회 스폰하고, 모델은 인자로 지정하지 않는다**(정의가 소유 — 지정하는 순간 덮인다). 정의는 Claude·Codex **양쪽에 배포된다**(M3 2026-08-19 — Claude `~/.claude/agents/plan-verifier.md`, Codex `~/.codex/agents/plan_verifier.toml` — 이름의 하이픈이 밑줄로 바뀌는 것은 Codex 이름 규칙이다. 출고 계약은 `custom-skills/agents/README.md`). 무엇을 사냥하고 무엇을 돌려주는지는 그 정의가 소유하므로 프롬프트에 복제하지 않는다. **자문형** — 발견 반영+요지 1줄을 승인 제시에, 게이트=사용자(ADR 0008). pass-through 면제. 상세 `references/elicit.md` §백스톱.
-  - **그 정의를 받지 못한 런타임이거나 위임이 막힌 환경이면 자기 재검토 1회로 대체** (2026-08-05 실측 · 2026-08-19 M3 로 조건 확장): 조건이 둘인 이유는 실측이다 — Codex 는 위임이 열려 있는데 정의만 없어서 구 조건("위임이 막힌 환경")에 안 맞았고, 그래서 FA1 이 대체 사실 한 줄도 없이 증발했다. 대체 절차는 ①수치·경로 실측 ②미소진 결정 ③leaf 위반만 재훑고 **승인 제시에 "fresh 검증자 대체: 자기 재검토(정의 미배포 또는 위임 제한)" 한 줄**을 적는다. 금지는 대체 사실 누락뿐 — 검증 생략도, 위임 가부를 되묻는 정지도 아니다.
-- **멀티스텝 milestone** → **기본 정지.** 실행 전 계획을 제시하고 *명시 승인*을 받는다. **승인("ㄱㄱ") 전 실행 진입·구현코드 변경·커밋 금지(하드 차단).**
-  - **제시 방식**: 아래 "계획 제시 형식"으로 보여준 뒤 **그 ⑦의 3안 문자열을 그대로 평문 질문으로 써서 턴을 끝낸다 — 같은 턴에 AskUserQuestion 금지**(모달이 제시를 덮는다 — F1). AskUserQuestion 은 선택지가 자기완결인 결정에만.
-    - ⚠ **질문 문자열을 여기에 다시 적지 않는다.** 정본은 ⑦ 한 자리뿐이다 — 두 곳에 서로 다른 문자열이 있으면 먼저 읽은 쪽이 이겨서 승인 어휘가 조용히 축소된다. (2026-08-15 실측: 이 줄이 실행 위치 3택을 뺀 축약 문자열을 들고 있었고, 그게 ⑦을 덮어 사용자가 새 세션·워크트리 선택지를 못 받았다. 세션이 옛 배포본을 물고 있어서가 아니라 문서가 자기 자신과 어긋나 있었다. 그래서 여기에는 축약본조차 예시로 남기지 않는다.)
-  - **답의 의미 — 승인 어휘 3분화 (M21 2026-08-15)**: 승인은 실행 위치까지 함께 답한다 — **`ㄱㄱ`** = 같은 턴 실행(기본, 단독 "ㄱㄱ"는 언제나 이 뜻) · **`새로ㄱ`** = 승인 등록+`docs(plan):` 커밋까지 마친 뒤 이 세션을 마감 — 새 세션을 열고 "이어가"로 이어받는다. 그 외: "확장"=과소 판정 → 더 담아 재제시 · "수정"=반영 후 재제시 · 중단은 상시 가능.
-  - **승인 등록은 실행할 체크아웃에서**: 승인 직후 `python "$HARNESS_SCRIPTS/approve_harness_plan.py" <plan> --root <repo> --work-id <id> --milestone-id <id> --changeset-path <path> --session-id <runtime-token>` 을 **실행할 바로 그 체크아웃(워크트리)에서** 실행해(승인받은 연쇄는 `--chain <id,id>` — 미제시 id 금지) plan SHA-256 approval receipt 와 active work 를 원자 등록 — work.json 은 checkout-local(HQ1). 승인 hash 가 현재 plan 과 다르거나 receipt 가 없으면 실행/continuation 금지.
-  - **승인 커밋 — 등록 직후 즉시 (2026-08-04 M12)**: plan doc(+ROADMAP marker 갱신분)을 `docs(plan): <milestone 제목> 계획 승인` **단독 커밋**으로 남기고 push 한다. 왜: 영수증은 gitignored 라 이 커밋이 git 이력의 계획-구현 대조 기준점이다(실측: M10·M11 계획서가 구현 커밋에 동승). "구현코드 커밋 금지"와 모순 아님 — 계획서는 계획 문서다(produce boundary 는 `plans/` 를 차단하지 않는다).
-  - **봉인 범위** — 승인 hash 는 step 체크박스 *상태*를 봉인하지 않고(MM7), **append-only 절(`## finding 큐`·`## 진행 로그`)의 *내용*도 봉인 대상이 아니다**(cs#357). 그 밖의 본문과 **절 제목 줄**은 봉인 — 바꾸면 차단.
-  - **소유자 판정 정본은 env `CLAUDE_CODE_SESSION_ID`**, `--session-id` 는 env 없는 런타임용 기록 토큰 — 둘이 다르면 approve 가 경고.
-  - **승인 커밋 직후 같은 턴 run 진입 (run-008)**: 등록·커밋은 종착점이 아니다 — 같은 턴에 `/harness-run` 으로 step-1 착수까지. "승인되었다" 보고만 하고 턴 종료 금지(ㄱㄱ 2회 실측 갭). 이 규칙은 `ㄱㄱ`(같은 턴) 답에 적용 — `새로ㄱ` 는 그 절차가 종착점이다(M21).
-- **단일 step·가벼운 작업** (분석 1 ref, 단일 changeset, typo·marker·기계적 이어가기) → **pass-through.** "produce 끝 → run 진입: …" 한 줄 통지만 하고 `/harness-run` 으로. (단 사용자가 "실행 전에 멈춰"·"계획 먼저" 명시 시 단일 작업도 제시·승인.)
-
-**계획 제시 형식 (멀티스텝 정지 시).** plan doc 을 그대로 던지지 말고 ① 산문 요약(무엇을·왜) ② 체크박스 step 트리(+verify) ③ 핵심 결정·리스크·중단점 ③′ **검증자 지적 처분 요약** — 계획 검증자를 붙였으면 지적 n건 중 반영/부분 반영/기각이 몇이고 기각 이유가 무엇인지 한 줄(계획서의 `## 검증자 지적 처분` 절이 정본, 강제는 아니다) ④ plan doc 경로 + run 영향 ⑤ **무감독 전망** — 이 승인으로 개입 없이 어디까지 가는지: 연쇄 milestone 목록+한 줄 요지+예상 정지 지점, 연쇄가 비면 왜 1-milestone 인지 한 줄 ⑤′ **완료 상황 되읽기 (M25 2026-08-22)** — 이 계획이 끝나면 무엇이 어떻게 되는지 **한 문장**으로 적는다. 판정 기준은 *계획서를 안 읽은 사람이 틀렸다고 말할 수 있는가* — DoD 원문을 붙여넣지 않고 사람 말투로 번역한다(검증 문법을 그대로 보이면 사용자는 동의 여부를 판단할 수 없다). **사용자가 이 문장을 정정하면 그 문장을 계획서 `## 검증/DoD` 와 ROADMAP `DoD` 에 반영한 뒤 재제시한다** — 승인 전이므로 봉인 무관이고, "완료 기준을 사용자가 고칠 수 있다"는 약속의 처리처가 여기다. ⑥ **실행 위치 = 승인 어휘** (M21 2026-08-15) — `ㄱㄱ` 같은 턴(기본) / `새로ㄱ` 새 세션(등록·커밋 후 이 세션은 마감 — 새 세션을 열고 "이어가"로 이어받는다). 무언이면 같은 턴. 에이전트는 실행 위치를 권고할 수 있는데 **기준은 수치다** (D7 2026-08-20 사용자 확정): **fable·opus 는 컨텍스트 사용률 20% 미만이면 `ㄱㄱ`, 20% 이상이면 `새로ㄱ` 를 권고**하고, 그 밖의 모델은 이 기준의 대상이 아니다. **권고에는 판정 근거 수치를 함께 적는다 — 수치를 못 대면 권고하지 않고 3택만 제시한다**(2026-08-20 실측: 실측 없이 '여유가 충분하다'고 인상으로 권고했다가 적발됐다. 구 30~40% 경계 문구는 이 기준으로 대체됐다). **수치 출처 = `~/.claude/state/statusline-ctx/<session_id>.json` 자가 판독** (h-e M24 2026-08-22 — statusline.sh 가 매 렌더마다 `context_window.used_percentage` 를 세션별 파일로 tee 한다. session_id 는 env `CLAUDE_CODE_SESSION_ID`, 값 `ctx_pct`, `ts` 로 신선도 판정 — 이 세션이 자기 값 24% 를 읽어 실증). **파일이 없거나 오래됐으면**(tee 미설치 머신·Codex 런타임) 종전대로 승인 질문에 "status line 의 ctx 값을 알려달라"를 함께 물어 그 수치로 판정한다(2026-08-21 실측: 출처 미기재로 세션이 확인 위치를 못 찾고 헤맸다) ⑦ **승인 질문 3안 고정**("승인(ㄱㄱ — 새 세션이면 새로ㄱ) / 확장 — 범위를 더 담아 재제시 / 수정") 순. 문서만 만들고 요약 없이 넘어가기 금지.
-
-미해결 사용자 결정이 남았으면 진행 승인부터 받지 말고 논의 루프 [선택지+추천+근거]로 먼저 매듭짓는다(승인 질문에 합쳐도 됨).
-
-**필수 정지 예외.** target milestone 부재·요청-milestone 부정합·legacy 정규화·새 milestone 추가는 pass-through 도 하지 않는다 — 제안만 하고 사용자 승인 전 실행·구현·커밋 **금지**. 새 계획 *작성*이면 「계획 작성」으로.
-
-단, 같은 turn 에 continuation 명시 + 기존 pending/Next Candidate 그대로 승격이면 "승인된 후보 실행"이다 — 승격 후 「milestone 선택」으로(멀티스텝이면 승인 게이트 재적용).
+같은 절차. `plan-verifier` 는 `collaboration.spawn_agent(agent_type="plan_verifier", fork_turns="none")`. Codex 쪽 정리는 2026-09-21 이후 별도 세션 소관.

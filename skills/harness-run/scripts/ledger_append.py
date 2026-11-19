@@ -183,6 +183,18 @@ def build_complete(args: argparse.Namespace, prior: list[dict[str, Any]]) -> dic
     return {"event": "task_completed", "task_id": args.task_id, "evidence": args.evidence}
 
 
+def build_dropped(task_id: str, milestone_id: str, evidence: list[str], reason: str, basis: str) -> dict[str, Any]:
+    """중단 종결(M24, 2026-11-03) — 완료 3-event 없이 단독. 완료로 세지 않는다."""
+    return {
+        "event": "task_dropped",
+        "task_id": task_id,
+        "milestone_id": milestone_id,
+        "evidence": evidence,
+        "reason": reason,
+        "basis": basis,
+    }
+
+
 def build_interruption(args: argparse.Namespace) -> dict[str, Any] | str:
     source = (args.source or "").strip()
     reason = (args.reason or "").strip()

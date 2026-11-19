@@ -55,12 +55,12 @@ class KindShim:
 
 
 def patch_kinds(monkeypatch, kinds=None, raise_exc=None):
-    real = mod.load_portfolio_status
+    real = mod.load_roadmap_parser
 
-    def fake(path=mod.PORTFOLIO_STATUS):
+    def fake(path=mod.ROADMAP_PARSE):
         return KindShim(real(path), kinds=kinds, raise_exc=raise_exc)
 
-    monkeypatch.setattr(mod, "load_portfolio_status", fake)
+    monkeypatch.setattr(mod, "load_roadmap_parser", fake)
 
 
 CLEAN = """# Roadmap
@@ -351,7 +351,7 @@ def test_placement_vocabulary_has_no_local_copy():
     assert mod.load_roadmap_sync().IN_PROGRESS_HEADING_RE is not None
 
 
-def test_terminal_statuses_agree_with_portfolio_status():
+def test_terminal_statuses_agree_with_parser():
     """roadmap_sync 의 종결 4종 리터럴이 총괄 정본과 같은지.
 
     roadmap_sync 는 플릿 공유 스크립트라 외부 레포 절대경로에 하드 의존하지 않는다.
@@ -359,9 +359,9 @@ def test_terminal_statuses_agree_with_portfolio_status():
     두 모듈이 동시에 잡히기 때문이다.
     """
     try:
-        ps = mod.load_portfolio_status()
+        ps = mod.load_roadmap_parser()
     except Exception:  # noqa: BLE001 — 총괄 모듈이 없는 기기에서는 판정할 수 없다
-        pytest.skip("portfolio_status 를 불러올 수 없다")
+        pytest.skip("roadmap_parse 를 불러올 수 없다")
     assert set(mod.load_roadmap_sync().TERMINAL_STATUSES) == set(ps.TERMINAL_STATUSES)
 
 
