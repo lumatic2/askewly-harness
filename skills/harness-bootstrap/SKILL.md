@@ -7,7 +7,7 @@ description: 새 git 레포에 AI-readiness 하네스를 부팅하는 설치 스
 
 레포에 harness 인프라를 깐다. 이 스킬은 `init-ai-readiness.sh` 의 **interactive wrapper — 설치만 담당**한다. 작업 규칙(산출물 계약·문서 수명·배포 검증 게이트)의 정본은 `/harness-plan`·`/harness-run`·`/harness-done` SKILL.md 3종과 custom-skills 문서이며, **여기에 복제하지 않는다** (2026-07-06 HU2 — 정책 복제가 drift 원인이었음).
 
-핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$AO_ROOT`(opt-in). **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
+핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(플러그인 설치 위치) → `$AO_ROOT`(opt-in). **이 스킬은 그 스크립트 없이는 부팅할 수 없다**(설계 — 정책·템플릿 복제가 drift 원인이었음). 없으면 명시적으로 실패한다.
 
 ## 1) 상황 파악 (조용히, 사용자에게 묻기 전)
 
@@ -63,10 +63,11 @@ changesets/{README,CHANGESET_TEMPLATE}.md
 # 없으면 조용히 넘어가지 않고 즉시 실패한다: 부트스트랩은 반쯤 되면 더 나쁘다.
 AO_ROOT="${AO_ROOT:-/nonexistent}"
 INIT=""
-for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do
+ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"
+for c in "${ASKEWLY_ROOT%/}/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do
   [ -f "$c" ] && INIT="$c" && break
 done
-[ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라"; exit 1; }
+[ -n "$INIT" ] || { echo "init-ai-readiness.sh 를 못 찾았다 — askewly 플러그인이 설치됐는지 확인하라(Claude Code `/plugin` · Codex `codex plugin list`)"; exit 1; }
 
 bash "$INIT" "$PWD" --full
 ```

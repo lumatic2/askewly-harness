@@ -11,13 +11,14 @@ pytest, package.json 에 실제 test 스크립트가 있으면 `npm test`(둘 �
 
 Usage:
   suite_gate.py --root <레포> [--command "<명령>"] [--timeout 초(기본 3600, env SUITE_GATE_TIMEOUT)]
-  suite_gate.py --root <레포> --waive "<사유>"   # 플레이키·남의 변경으로 빨간 경우. 노트 `스위트:` 줄이 필수가 된다
+  suite_gate.py --root <레포> --waive "<사유>"   # 실패 이름을 뽑을 수 없는 플레이키·환경 실패(선재 빨강은 docs/known-failures.md). 노트 `스위트:` 줄이 필수가 된다
   suite_gate.py --root <레포> --command "<명령>" --shell bash   # 명령을 기본 셸 대신 `bash -c` 로(괄호 묶음 `(cd a && …) && (cd b && …)` 용). 기록에 shell 필드
   suite_gate.py --root <레포> --command "<명령>" --stream   # 실행 출력을 로그에 쓰면서 표준 출력에도 줄 단위로 실시간 흘린다(--check 와 함께 못 쓴다)
   suite_gate.py --root <레포> --check [--head <sha>] [--command "<명령>"] [--strict-clean]
       # 실행 없이 판정만(기록을 쓰지 않는다): 기록이 pass 이고 대상 커밋(기본 HEAD)을 덮는가 —
-      # 같은 커밋이거나, 기록 커밋이 조상이고 그 뒤 바뀐 파일이 전부 RECORD_ONLY_PATHS(plans/ archive/plans/ changesets/
-      # archive/reports/ docs/reports/ ROADMAP.md HANDOFF.md docs/BACKLOG.md) 안. --command 를 주면 기록의 명령과 같아야 하고,
+      # 같은 커밋이거나, 기록 커밋이 조상이고 그 뒤 바뀐 파일이 전부 RECORD_ONLY_PATHS 안이거나, 대상의 코드 지문
+      # (RECORD_ONLY_PATHS 밖 트리 해시)이 기록의 fingerprint 와 같을 때(M32 — 리베이스 뒤에도). fail 기록도 실패 이름이
+      # 전부 docs/known-failures.md 줄에 걸리면 덮는다(M32). --command 를 주면 기록의 명령과 같아야 하고,
       # --strict-clean 이면 기록 당시 추적 파일 미커밋 변경(dirty_tracked)이 0 이어야 한다.
       # 덮으면 `suite-gate: covered — <사유>` exit 0, 아니면 `suite-gate: not covered — <사유>` exit 1.
   suite_gate.py --root <레포> --check --head <sha> --base <원격 sha> [...]
@@ -33,8 +34,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -233,8 +236,12 @@ def _count_dirty_tracked(status_out: str | None) -> int | None:
 def write_record(root: Path, **fields) -> dict:
     ensure_local_exclude(root)
     status_out = _git(root, "status", "--porcelain")
+    head = fields.pop("head", None) if "head" in fields else (_git(root, "rev-parse", "HEAD") or "").strip() or None
     record = {
-        "head": (_git(root, "rev-parse", "HEAD") or "").strip() or None,
+        "head": head,
+        # 기록 전용 경로 밖 트리의 지문(M32 V-1) — 같은 코드면 조상 관계·HEAD 와 무관하게 덮는다.
+        # 커밋 트리만 본다 — 기록 당시 미커밋 변경은 지문에 없다(그건 dirty_tracked·--strict-clean 몫).
+        "fingerprint": tree_fingerprint(root, head) if head else None,
         "at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         "dirty": len(status_out.splitlines()) if status_out is not None else None,
         # 추적 파일의 미커밋 변경 줄 수(`??` 제외) — 훅 건너뛰기 판정(--strict-clean)이 쓴다
@@ -253,11 +260,150 @@ def write_record(root: Path, **fields) -> dict:
 # `.harness/` 전체가 아니다 — 그 아래 스크립트는 검사가 읽는 소스다.
 RECORD_ONLY_PATHS = ("plans/", "archive/plans/", "changesets/", "archive/reports/", "docs/reports/",
                      "ROADMAP.md", "HANDOFF.md", "docs/BACKLOG.md",
-                     ".harness/work.json", ".harness/execution-ledger.jsonl")
+                     ".harness/work.json", ".harness/execution-ledger.jsonl",
+                     "docs/known-failures.md")
+# 알려진 실패 목록(M32 V-4) — 한 줄 `- <실패 이름 일부> — <사유> (<날짜>)`. 기록 전용 경로라 고쳐도 기록이 무효가 되지 않는다.
+KNOWN_FAILURES = Path("docs") / "known-failures.md"
+
+# 실패 이름 추출 — pytest `FAILED <노드>[ - 메시지]` · cargo `test <이름> ... FAILED` · TAP `not ok N - <이름>`
+# · node test runner `✖ <이름> (3ms)` · jest/vitest `FAIL <파일>`.
+_FAILURE_PATTERNS = (
+    re.compile(r"^FAILED (.+?)(?: - .*)?$"),
+    re.compile(r"^ERROR (.+?)(?: - .*)?$"),
+    re.compile(r"^test (\S+) \.\.\. FAILED$"),
+    re.compile(r"^not ok \d+(?: -)? (.+?)(?:\s+#.*)?$"),
+    re.compile(r"^\s*\u2716 (.+?)(?: \([\d.]+m?s\))?$"),
+    re.compile(r"^\s*FAIL (\S+)"),
+)
+
+
+def extract_failure_names(text: str) -> list[str]:
+    """실행 출력에서 실패한 테스트 이름을 순서대로(중복 없이) 뽑는다. 못 뽑으면 빈 목록."""
+    names: list[str] = []
+    for line in text.splitlines():
+        line = line.rstrip()
+        for pat in _FAILURE_PATTERNS:
+            m = pat.match(line)
+            if m:
+                name = m.group(1).strip()
+                if name and name not in names:
+                    names.append(name)
+                break
+    return names
+
+
+# 러너 요약의 실패 수 — 뽑은 이름 수와 다르면 이름 일부만 뽑힌 것이니 덮지 않는다(M32 마감 리뷰)
+_COUNT_PATTERNS = (
+    re.compile(r"\b(\d+) (?:failed|errors?)\b"),            # pytest `2 failed, 1 error in` · jest `Tests: 2 failed`
+    re.compile(r"^# fail (\d+)$"),                           # TAP · node --test
+    re.compile(r"^\u2716 (?:fail(?:ing)?|failures?) (\d+)"),  # node --test spec 요약
+)
+_EARLY_STOP = re.compile(r"(?:^|\s)(?:-x|--exitfirst|--maxfail[= ]\S+|--bail\S*|--fail-fast)(?:\s|$)")
+
+
+def reported_failure_count(text: str) -> int | None:
+    """출력의 마지막 실패 요약 줄에서 실패(+오류) 수. 요약이 없으면 None."""
+    found = None
+    for line in text.splitlines():
+        line = line.strip().strip("=").strip()
+        nums = [int(n) for pat in _COUNT_PATTERNS for n in pat.findall(line)]
+        if nums:
+            found = sum(nums)
+    return found
+
+
+def failure_names_for(command: str, text: str) -> list[str]:
+    """기록할 실패 이름. 중간에 멈춘 실행(-x·--maxfail 등)이거나 요약 수와 뽑은 수가 다르면 빈 목록 — 덮을 수 없다."""
+    if _EARLY_STOP.search(command):
+        return []
+    names = extract_failure_names(text)
+    count = reported_failure_count(text)
+    if count is not None and count != len(names):
+        return []
+    return names
+
+
+MIN_KEY_LEN = 6
+
+
+def key_matches(key: str, name: str) -> bool:
+    """목록 키가 실패 이름에 경계(`::`·`[`·끝)에서 맞는가 — 단순 부분 문자열이 아니다."""
+    if key == name:
+        return True
+    starts = [0] + [m.end() for m in re.finditer(r"::|/", name)]
+    for i in starts:
+        if name.startswith(key, i):
+            rest = name[i + len(key):]
+            if rest == "" or rest.startswith("::") or rest.startswith("["):
+                return True
+    return False
+
+
+def load_known_failures(root: Path) -> list[str]:
+    """`docs/known-failures.md` 의 `- <이름 일부> — <사유>` 줄에서 이름 일부만. 파일이 없으면 빈 목록."""
+    path = root / KNOWN_FAILURES
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        parts = re.split(r"\s+[—–]\s+|\s+--\s+", line[2:], maxsplit=1)
+        if len(parts) < 2:
+            continue  # 사유 구분자가 없는 줄(설명·자리표시)은 키가 아니다
+        key = parts[0].strip().strip("`")
+        if len(key) >= MIN_KEY_LEN:
+            out.append(key)
+    return out
+
+
+def known_failures_cover(root: Path, rec: dict) -> tuple[bool, str, list[str]]:
+    """fail 기록의 실패 이름이 1개 이상이고 전부 알려진 실패 목록 줄에 걸리는가.
+    (덮는가, 사유, 목록에서 지울 후보 — 이번 실행에서 실패하지 않은 목록 줄)."""
+    if rec.get("reason"):
+        return False, f"실패 기록에 사유가 있다({rec.get('reason')}) — 알려진 실패와 대조하지 않는다", []
+    failures = rec.get("failures")
+    if not isinstance(failures, list) or not failures:
+        return False, "실패 기록에서 실패 이름을 하나도 뽑지 못했다 — 알려진 실패와 대조할 수 없다", []
+    known = load_known_failures(root)
+    if not known:
+        return False, f"실패 {len(failures)}건 — 알려진 실패 목록({KNOWN_FAILURES.as_posix()})이 없거나 비었다", []
+    unknown = [f for f in failures if not any(key_matches(k, f) for k in known)]
+    stale = [k for k in known if not any(key_matches(k, f) for f in failures)]
+    if unknown:
+        shown = ", ".join(unknown[:3]) + (f" 외 {len(unknown) - 3}건" if len(unknown) > 3 else "")
+        return False, f"알려진 실패 목록 밖 실패 {len(unknown)}건: {shown}", stale
+    return True, f"알려진 실패만 {len(failures)}건", stale
 
 
 def _is_record_only(rel: str) -> bool:
     return any(rel.startswith(p) if p.endswith("/") else rel == p for p in RECORD_ONLY_PATHS)
+
+
+def tree_fingerprint(root: Path, rev: str) -> str | None:
+    """커밋 `rev` 트리에서 RECORD_ONLY_PATHS 밖 파일들의 (경로, 모드, blob id) 목록 해시. 못 읽으면 None."""
+    out = _git(root, "ls-tree", "-r", "-z", "--full-tree", f"{rev}^{{tree}}")
+    if out is None:
+        return None
+    entries = []
+    for item in out.split("\0"):
+        if not item or "\t" not in item:
+            continue
+        meta, path = item.split("\t", 1)
+        if _is_record_only(path):
+            continue
+        mode, _, blob = meta.split()
+        entries.append(f"{path}\0{mode}\0{blob}")
+    entries.sort()
+    return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
+
+
+def _fingerprint_covers(root: Path, rec: dict, target: str) -> bool:
+    fp = rec.get("fingerprint")
+    return isinstance(fp, str) and bool(fp) and tree_fingerprint(root, target) == fp
 
 
 def _load_record(root: Path) -> tuple[dict | None, str]:
@@ -290,6 +436,15 @@ def record_scope(root: Path, head: str | None = None, *, record: dict | None = N
         return False, f"대상 커밋을 풀 수 없다({head or 'HEAD'}) — git 레포가 아니거나 없는 커밋"
     if recorded == target:
         return True, "같은 커밋"
+    ok, why = _ancestor_scope(root, recorded, target)
+    if not ok and _fingerprint_covers(root, rec, target):
+        # 지문이 있는 기록(M32 V-1): 리베이스·기록 커밋 순서가 바뀌어도 코드가 같으면 덮는다
+        return True, f"같은 코드 지문(기록 {recorded[:8]} · 대상 {target[:8]})"
+    return ok, why
+
+
+def _ancestor_scope(root: Path, recorded: str, target: str) -> tuple[bool, str]:
+    """옛 판정 — 기록 커밋이 대상의 조상이고 그 사이 바뀐 파일이 전부 RECORD_ONLY_PATHS 안."""
     if _git(root, "merge-base", "--is-ancestor", recorded, target) is None:
         return False, f"기록 커밋 {recorded[:8]} 가 대상 {target[:8]} 의 조상이 아니다"
     diff = _git(root, "diff", "--name-only", "--no-renames", "-z", recorded, target)
@@ -340,7 +495,14 @@ def record_covers(root: Path, head: str | None = None, *, command: str | None = 
     if rec is None:
         return False, why
     status = rec.get("status")
-    if status != "pass":
+    known_why = None
+    if status == "fail":
+        ok, known_why, stale = known_failures_cover(root, rec)
+        if stale:
+            print(f"suite-gate: 목록에서 지울 후보 — 이번 실행에서 실패하지 않았다: {', '.join(stale)}")
+        if not ok:
+            return False, f"기록 status 가 pass 가 아니다(fail) — {known_why}"
+    elif status != "pass":
         return False, f"기록 status 가 pass 가 아니다({status})"
     if command is not None and rec.get("command") != command:
         return False, f"기록의 명령({rec.get('command')})이 요청한 명령({command})과 다르다"
@@ -350,7 +512,10 @@ def record_covers(root: Path, head: str | None = None, *, command: str | None = 
             return False, "기록에 dirty_tracked 가 없다(옛 기록)"
         if dirty != 0:
             return False, f"기록 당시 추적 파일에 미커밋 변경이 {dirty}줄 있었다"
-    return record_scope(root, head, record=rec)
+    ok, why = record_scope(root, head, record=rec)
+    if ok and known_why:
+        return True, f"{known_why} · {why}"
+    return ok, why
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -401,22 +566,20 @@ def main(argv: list[str] | None = None) -> int:
     started_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     started = time.monotonic()
     start_head = (_git(root, "rev-parse", "HEAD") or "").strip() or None
+    start_fp = tree_fingerprint(root, start_head) if start_head else None
 
     def finish(**fields):
         completed_at = dt.datetime.now().astimezone().isoformat(timespec="seconds")
         fields.setdefault("shell", args.shell)
         end_head = (_git(root, "rev-parse", "HEAD") or "").strip() or None
-        head = end_head
         if start_head != end_head:
-            # 실행 중 기록 파일(노트·changeset·HANDOFF 등)만 커밋했으면 돈 코드는 그대로다 — 시작 HEAD 로
-            # 기록하고 이후 커밋은 record_scope 가 덮는다(2026-11-19 M30 마감 마찰: 5분 재실행 1회).
-            moved_ok = bool(start_head and end_head) and record_scope(
-                root, end_head, record={"head": start_head})[0]
-            if moved_ok:
-                head = start_head
-            else:
-                fields.update(status="fail", reason="실행 중 HEAD 변경")
-        return write_record(root, **fields, head=head, start_head=start_head,
+            # 실행 중 기록 파일(노트·changeset·HANDOFF 등)만 커밋했으면 시작·끝 지문이 같다 — 돈 코드가
+            # 그대로이니 통과를 유지한다(M32 V-1, 2026-11-19 M30 마감 마찰 1e2caf7 을 지문으로 흡수).
+            same_code = bool(start_head and end_head) and start_fp is not None \
+                and tree_fingerprint(root, end_head) == start_fp
+            if not same_code:
+                fields.update(status="fail", reason="실행 중 HEAD 변경", failures=[])
+        return write_record(root, **fields, head=end_head, start_head=start_head,
                             started_at=started_at, completed_at=completed_at,
                             elapsed_seconds=round(time.monotonic() - started, 3))
 
@@ -459,7 +622,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         if code != 0:
             print(tail(text))
-            finish(status="fail", exit_code=code, command=command, reason=None, log=str(log))
+            failures = failure_names_for(command, text)
+            finish(status="fail", exit_code=code, command=command, reason=None, log=str(log), failures=failures)
+            if failures:
+                print(f"suite-gate: 실패 이름 {len(failures)}건 기록 — 전부 {KNOWN_FAILURES.as_posix()} 에 있으면 --check 가 덮는다")
             print(
                 f"suite-gate: fail (exit {code}) — 전체 로그 {log}. 고치고 커밋한 뒤 다시 돌린다. "
                 "환경 탓이면 --command, 플레이키·남의 변경이면 --waive \"<사유>\"."

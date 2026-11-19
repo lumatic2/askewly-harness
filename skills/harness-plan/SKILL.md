@@ -8,8 +8,8 @@ description: >-
 
 > 3종 세트: **`harness-plan`**(계획 — 문서만) → `harness-run`(실행 — git 소유) → `harness-done`(마감). 기계장치는 `harness-run/scripts/` 한 곳:
 > ```bash
-> HARNESS_SCRIPTS="$HOME/.codex/skills/harness-run/scripts"
-> [ -d "$HARNESS_SCRIPTS" ] || HARNESS_SCRIPTS="$HOME/.claude/skills/harness-run/scripts"
+> ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"
+> HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"
 > HARNESS_ROOT="$(python "$HARNESS_SCRIPTS/harness_focus.py" resolve)"   # 세션 초점 — 없으면 cwd
 > ```
 > 이 스킬은 **produce 구간**이다 — 계획·문서만 쓴다. 구현코드·작업물 커밋 금지(계획서 커밋은 예외).

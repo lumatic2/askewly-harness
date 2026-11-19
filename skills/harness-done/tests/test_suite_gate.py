@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 import subprocess
 import sys
 import time
@@ -254,17 +256,6 @@ def test_head_change_during_run_fails(tmp_path):
     assert close(root, note) == 1
 
 
-def test_record_only_commit_during_run_keeps_pass_at_start_head(tmp_path):
-    root, _ = make_repo(tmp_path)
-    start = head_of(root)
-    assert suite_gate.main(["--root", str(root), "--command", _commit_during("changesets/x.md")]) == 0
-    rec = record(root)
-    assert rec["status"] == "pass"
-    assert rec["head"] == start and rec["start_head"] == start
-    assert head_of(root) != start
-    assert suite_gate.main(["--root", str(root), "--check"]) == 0
-
-
 def test_nonpositive_timeout_is_usage_error(tmp_path):
     root, _ = make_repo(tmp_path)
     assert suite_gate.main(["--root", str(root), "--command", PASS, "--timeout", "0"]) == 2
@@ -361,12 +352,13 @@ def test_check_rejects_non_ancestor_record(tmp_path, capsys):
     root, _ = make_repo(tmp_path)
     first = head_of(root)
     git(root, "checkout", "-q", "-b", "side")
-    side = commit_file(root, "plans/side.md")
+    side = commit_file(root, "src/side.py")
     git(root, "checkout", "-q", "-")
-    commit_file(root, "plans/main.md")
+    commit_file(root, "src/main.py")
     assert suite_gate.main(["--root", str(root), "--command", PASS]) == 0  # 기록 head = main 끝
     capsys.readouterr()
-    for target in (first, side):  # 기록 커밋이 더 새롭거나 다른 가지 — 조상이 아니다
+    # 기록 커밋이 더 새롭거나 다른 가지 — 조상이 아니고 코드도 달라 지문도 못 덮는다(M32: 같은 코드면 지문이 덮는다)
+    for target in (first, side):
         assert suite_gate.main(["--root", str(root), "--check", "--head", target]) == 1
         out = capsys.readouterr().out
         assert out.startswith("suite-gate: not covered — ")
@@ -437,7 +429,8 @@ def test_record_only_paths_are_the_six_of_d5():
     """D5 여섯 경로 + 마감 감사 뒤 사용자가 더한 archive/plans/ (닫기 커밋이 계획서를 거기로 옮긴다)."""
     assert set(suite_gate.RECORD_ONLY_PATHS) == {
         "plans/", "archive/plans/", "changesets/", "archive/reports/", "docs/reports/", "ROADMAP.md", "HANDOFF.md",
-        "docs/BACKLOG.md", ".harness/work.json", ".harness/execution-ledger.jsonl"}
+        "docs/BACKLOG.md", ".harness/work.json", ".harness/execution-ledger.jsonl",
+        "docs/known-failures.md"}  # M32 V-4: 알려진 실패 목록을 고쳐도 기록이 무효가 되지 않는다
 
 
 def test_check_accepts_closing_commit_shape(tmp_path, capsys):
@@ -682,3 +675,268 @@ def test_stream_with_check_is_usage_error(tmp_path, capsys):
     root, _ = make_repo(tmp_path)
     assert suite_gate.main(["--root", str(root), "--check", "--stream"]) == 2
     assert "--stream" in capsys.readouterr().err
+
+
+# ---- M32 step-1: 통과 기록을 코드 지문에 묶는다 (V-1) ----
+
+def test_fingerprint_covers_rebased_same_code(tmp_path, capsys):
+    """같은 코드를 다른 부모 위에 다시 커밋한(조상 아님) 대상도 덮는다 — 리베이스·기록 커밋 순서 뒤바뀜."""
+    root, _ = make_repo(tmp_path)
+    base = head_of(root)
+    commit_file(root, "src/app.py", "print(1)\n")
+    assert suite_gate.main(["--root", str(root), "--command", PASS]) == 0
+    recorded = record(root)["head"]
+    assert record(root).get("fingerprint")
+    # base 위에 기록 파일을 먼저 커밋하고 같은 코드를 다시 얹는다 — recorded 는 이 커밋의 조상이 아니다
+    git(root, "checkout", "-q", "-b", "rebased", base)
+    commit_file(root, "HANDOFF.md", "h")
+    target = commit_file(root, "src/app.py", "print(1)\n")
+    assert subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", recorded, target]).returncode != 0
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check", "--head", target]) == 0
+    assert "같은 코드 지문" in capsys.readouterr().out
+
+
+def test_fingerprint_changes_on_code_edit(tmp_path, capsys):
+    """기록 전용 경로 밖 파일 한 줄 변경이면 덮지 않는다 — 거짓 통과를 막는 문."""
+    root, _ = make_repo(tmp_path)
+    base = head_of(root)
+    commit_file(root, "src/app.py", "print(1)\n")
+    assert suite_gate.main(["--root", str(root), "--command", PASS]) == 0
+    fp = record(root)["fingerprint"]
+    git(root, "checkout", "-q", "-b", "other", base)
+    target = commit_file(root, "src/app.py", "print(2)\n")
+    assert suite_gate.tree_fingerprint(root, target) != fp
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check", "--head", target]) == 1
+    assert capsys.readouterr().out.startswith("suite-gate: not covered — ")
+    # 기록 전용 경로만 다르면 지문이 같다
+    git(root, "checkout", "-q", "-b", "other2", base)
+    commit_file(root, "src/app.py", "print(1)\n")
+    same = commit_file(root, "plans/p.md", "p")
+    assert suite_gate.tree_fingerprint(root, same) == fp
+
+
+def test_run_survives_record_only_commit_midway(tmp_path):
+    """실행 중 기록 파일만 커밋하면 시작·끝 지문이 같아 pass — 끝 HEAD 로 기록되고 --check 가 덮는다."""
+    root, _ = make_repo(tmp_path)
+    start = head_of(root)
+    assert suite_gate.main(["--root", str(root), "--command", _commit_during("changesets/x.md")]) == 0
+    rec = record(root)
+    assert rec["status"] == "pass"
+    assert rec["start_head"] == start and rec["head"] == head_of(root) != start
+    assert rec["fingerprint"] == suite_gate.tree_fingerprint(root, start)
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
+
+
+def test_run_fails_on_code_commit_midway(tmp_path):
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _commit_during("src/code.py")]) == 1
+    rec = record(root)
+    assert rec["status"] == "fail" and rec["reason"] == "실행 중 HEAD 변경"
+
+
+def test_legacy_record_without_fingerprint(tmp_path, capsys):
+    """지문 없는 옛 기록은 옛 판정(같은 커밋·조상+기록 파일만) 그대로 — 조상 아닌 같은 코드는 덮지 않는다."""
+    root, _ = make_repo(tmp_path)
+    base = head_of(root)
+    commit_file(root, "src/app.py", "print(1)\n")
+    assert suite_gate.main(["--root", str(root), "--command", PASS]) == 0
+    path = root / ".harness" / "suite-gate.json"
+    rec = json.loads(path.read_text(encoding="utf-8"))
+    rec.pop("fingerprint")
+    path.write_text(json.dumps(rec), encoding="utf-8")
+    commit_file(root, "ROADMAP.md")
+    assert suite_gate.record_covers(root) == (True, "기록 커밋 뒤 기록 파일 1개만 변경")
+    git(root, "checkout", "-q", "-b", "rebased", base)
+    target = commit_file(root, "src/app.py", "print(1)\n")
+    ok, why = suite_gate.record_covers(root, target)
+    assert not ok and "조상" in why
+
+
+# ---- M32 step-2: 알려진 실패와 대조해 새 실패만 막는다 (V-4) ----
+
+PYTEST_FAIL_OUT = """\
+tests/test_a.py::test_ok PASSED
+=========================== short test summary info ============================
+FAILED tests/test_a.py::test_flaky_net - ConnectionError: boom
+FAILED tests/test_b.py::TestX::test_win_path[case-1]
+2 failed, 1 passed in 0.5s
+"""
+
+
+def _fail_with(text: str) -> str:
+    """주어진 출력을 내고 exit 1 로 끝나는 명령."""
+    return f'"{sys.executable}" -c "import sys;sys.stdout.write({text!r});sys.exit(1)"'
+
+
+def _known(root: Path, *lines: str) -> None:
+    path = root / "docs" / "known-failures.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# 알려진 실패\n\n" + "".join(f"{ln}\n" for ln in lines), encoding="utf-8")
+
+
+def test_extract_failure_names():
+    assert suite_gate.extract_failure_names(PYTEST_FAIL_OUT) == [
+        "tests/test_a.py::test_flaky_net", "tests/test_b.py::TestX::test_win_path[case-1]"]
+    cargo = "running 3 tests\ntest net::tests::fetch_ok ... ok\ntest net::tests::fetch_retry ... FAILED\n\nfailures:\n"
+    assert suite_gate.extract_failure_names(cargo) == ["net::tests::fetch_retry"]
+    tap = "ok 1 - parses\nnot ok 2 - renders korean path\n"
+    assert suite_gate.extract_failure_names(tap) == ["renders korean path"]
+    node = "✔ parses (1ms)\n✖ renders korean path (3ms)\n"
+    assert suite_gate.extract_failure_names(node) == ["renders korean path"]
+    jest = "PASS src/a.test.js\nFAIL src/b.test.js\n"
+    assert suite_gate.extract_failure_names(jest) == ["src/b.test.js"]
+    assert suite_gate.extract_failure_names("Traceback: boom\nexit 1\n") == []
+
+
+def test_known_failures_only_covers(tmp_path, capsys):
+    root, note = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(PYTEST_FAIL_OUT)]) == 1
+    rec = record(root)
+    assert rec["status"] == "fail" and len(rec["failures"]) == 2
+    _known(root, "- test_flaky_net — 네트워크 의존, main 에서도 빨강 (2026-11-19)",
+           "- test_win_path — Windows 경로, main 에서도 빨강 (2026-11-19)")
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
+    assert "covered — 알려진 실패만 2건" in capsys.readouterr().out
+    # 목록 파일을 커밋해도 기록이 무효가 되지 않는다 (RECORD_ONLY_PATHS)
+    git(root, "add", "docs/known-failures.md")
+    git(root, "commit", "-qm", "known")
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
+    assert close(root, note) == 0  # 마감도 면제 없이 닫힌다
+
+
+def test_new_failure_not_covered(tmp_path, capsys):
+    root, note = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(PYTEST_FAIL_OUT)]) == 1
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1  # 목록 파일 없음
+    _known(root)  # 빈 목록
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-19)")  # 하나는 목록 밖
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+    out = capsys.readouterr().out
+    assert "not covered" in out and "test_win_path" in out
+    assert close(root, note) == 1
+
+
+def test_no_failure_names_not_covered(tmp_path, capsys):
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with("Traceback: boom\n")]) == 1
+    assert record(root)["failures"] == []
+    _known(root, "- boom — 아무거나 (2026-11-19)")
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+    assert "실패 이름" in capsys.readouterr().out
+
+
+def test_stale_known_failure_reported(tmp_path, capsys):
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(PYTEST_FAIL_OUT)]) == 1
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-19)", "- test_win_path — 경로 (2026-11-19)",
+           "- test_fixed_long_ago — 이미 고쳐짐 (2026-10-01)")
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 0
+    out = capsys.readouterr().out
+    assert "목록에서 지울 후보" in out and "test_fixed_long_ago" in out
+
+
+# ---- M32 마감 리뷰 반영: 거짓 통과 경계 ----
+
+def _code_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    root, _ = make_repo(tmp_path)
+    commit_file(root, "src/app.py", "print(1)\n")
+    commit_file(root, "src/keep.py", "k\n")
+    assert suite_gate.main(["--root", str(root), "--command", PASS]) == 0
+    return root, head_of(root), record(root)["fingerprint"]
+
+
+@pytest.mark.parametrize("change", ["delete", "add", "chmod", "rename"])
+def test_fingerprint_differs_on_any_code_change(tmp_path, change):
+    root, recorded, fp = _code_repo(tmp_path)
+    if change == "delete":
+        git(root, "rm", "-q", "src/keep.py")
+    elif change == "add":
+        (root / "src" / "new.py").write_text("n\n", encoding="utf-8")
+        git(root, "add", "src/new.py")
+    elif change == "chmod":
+        git(root, "update-index", "--chmod=+x", "src/app.py")
+    else:
+        git(root, "mv", "src/keep.py", "src/kept.py")
+    git(root, "commit", "-qm", change)
+    target = head_of(root)
+    assert suite_gate.tree_fingerprint(root, target) != fp
+    assert suite_gate._fingerprint_covers(root, record(root), target) is False
+
+
+def test_known_key_substring_does_not_cover_other_tests(tmp_path, capsys):
+    """목록 키가 실패 이름의 일부 문자열일 뿐이면(같은 접두의 다른 테스트) 덮지 않는다 — 경계(::·[)에서만."""
+    out = "FAILED tests/test_a.py::test_x_new_regression - boom\n1 failed in 0.1s\n"
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(out)]) == 1
+    _known(root, "- test_x — 플레이키 (2026-11-19)")
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+    # 파라미터 변형은 키가 경계(`[`)에서 끝나면 덮는다
+    out2 = "FAILED tests/test_a.py::test_x[case-1] - boom\n1 failed in 0.1s\n"
+    (tmp_path / "b").mkdir()
+    root2, _ = make_repo(tmp_path / "b")
+    assert suite_gate.main(["--root", str(root2), "--command", _fail_with(out2)]) == 1
+    _known(root2, "- test_x — 플레이키 (2026-11-19)")
+    assert suite_gate.main(["--root", str(root2), "--check"]) == 0
+
+
+def test_short_or_placeholder_keys_ignored(tmp_path):
+    root, _ = make_repo(tmp_path)
+    _known(root, "- test — 너무 짧다 (2026-11-19)", "- 예시 줄 설명", "- `tests/test_a.py::test_flaky_net` — 네트워크 (2026-11-19)")
+    assert suite_gate.load_known_failures(root) == ["tests/test_a.py::test_flaky_net"]
+
+
+@pytest.mark.parametrize("out", [
+    # 이름을 뽑은 알려진 실패 + 수집 오류(ERROR)
+    "FAILED tests/test_a.py::test_flaky_net - boom\nERROR tests/b.py - ImportError\n1 failed, 1 error in 0.1s\n",
+    # 이름 일부만 뽑힌다 — 요약 수와 다름
+    "FAILED tests/test_a.py::test_flaky_net - boom\n2 failed in 0.1s\n",
+])
+def test_partial_extraction_not_covered(tmp_path, out, capsys):
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", _fail_with(out)]) == 1
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-19)")
+    capsys.readouterr()
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+
+
+def test_failed_id_with_spaces_extracted():
+    out = "FAILED t.py::test_new[a b] - boom\n1 failed in 0.1s\n"
+    assert suite_gate.extract_failure_names(out) == ["t.py::test_new[a b]"]
+
+
+def test_early_stop_run_not_covered(tmp_path):
+    """-x·--maxfail 로 중간에 멈춘 실행은 남은 테스트가 안 돌았으니 덮지 않는다."""
+    out = "FAILED tests/test_a.py::test_flaky_net - boom\n1 failed in 0.1s\n"
+    root, _ = make_repo(tmp_path)
+    cmd = _fail_with(out) + " -x"
+    assert suite_gate.main(["--root", str(root), "--command", cmd]) == 1
+    assert record(root)["failures"] == []
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-19)")
+    assert suite_gate.main(["--root", str(root), "--check"]) == 1
+
+
+def test_fail_with_code_commit_midway_not_covered(tmp_path):
+    """실패한 실행 중 코드가 커밋되면 알려진 실패만이어도 덮지 않는다 — 돈 코드가 닫는 코드가 아니다."""
+    out = "FAILED tests/test_a.py::test_flaky_net - boom\n1 failed in 0.1s\n"
+    code = (
+        "import pathlib,subprocess,sys;"
+        "p=pathlib.Path('src/code.py');p.parent.mkdir(parents=True,exist_ok=True);p.write_text('d');"
+        "g=['git','-c','user.name=t','-c','user.email=t@example.invalid'];"
+        "subprocess.run(g+['add','src/code.py'],check=True);"
+        "subprocess.run(g+['commit','-qm','during'],check=True);"
+        f"sys.stdout.write({out!r});sys.exit(1)"
+    )
+    root, _ = make_repo(tmp_path)
+    assert suite_gate.main(["--root", str(root), "--command", f'"{sys.executable}" -c "{code}"']) == 1
+    _known(root, "- test_flaky_net — 네트워크 (2026-11-19)")
+    ok, why = suite_gate.record_covers(root)
+    assert not ok

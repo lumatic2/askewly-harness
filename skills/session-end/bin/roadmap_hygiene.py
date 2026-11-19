@@ -31,8 +31,8 @@ from pathlib import Path
 ROADMAP_PARSE = Path(__file__).resolve().parent / "roadmap_parse.py"
 
 # 배포 레이아웃과 소스 트리 셋 다에서 성립한다:
-#   ~/.claude/skills/session-end/bin/  → ~/.claude/skills/harness-run/scripts/
-#   ~/.codex/skills/session-end/bin/   → ~/.codex/skills/harness-run/scripts/
+#   <플러그인 루트>/skills/session-end/bin/  → <플러그인 루트>/skills/harness-run/scripts/
+#   <플러그인 루트>/skills/session-end/bin/   → <플러그인 루트>/skills/harness-run/scripts/
 #   promoted/session-end/bin/          → promoted/harness-run/scripts/
 # 스테이징 이명 레인(`harness-run-stg`)은 셋째 후보로 찾고, 그래도 어긋나면 `--sync-scripts` 로 준다.
 # h-e M33 step-5 (F8): 종전엔 harness-run 경로 하나를 고정해 `-stg` 배포본에서 섹션 판정이 조용히 꺼졌다.

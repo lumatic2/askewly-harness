@@ -332,6 +332,11 @@ def suite_gate_check(root: Path, evidence_body: str) -> tuple[str | None, str | 
         return None, f"스위트 없음: {record.get('reason')}{note}"
     if status == "pass":
         return None, f"스위트 통과: {record.get('command')} (dirty {record.get('dirty')}){note}"
+    if status == "fail":
+        # 알려진 실패만 남은 실패는 면제 없이 덮는다(M32 V-4) — 판정은 suite_gate 한 곳에
+        known_ok, known_why, _ = suite_gate.known_failures_cover(root, record)
+        if known_ok:
+            return None, f"스위트 실패가 알려진 실패뿐: {known_why} ({suite_gate.KNOWN_FAILURES.as_posix()}){note}"
     return f"스위트가 실패 상태다({record.get('command')}, exit {record.get('exit_code')}) — 고치고 다시 돌린다: {command}", None
 
 

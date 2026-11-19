@@ -1,4 +1,4 @@
 interface:
   display_name: "Harness Run"
   short_description: "Execute an approved plan step by step: implement, verify on the real surface, commit"
-  default_prompt: "Use $harness-run only when the user explicitly invokes it or harness-plan hands over after approval."
+  default_prompt: "Use $askewly:harness-run only when the user explicitly invokes it or harness-plan hands over after approval."

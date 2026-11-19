@@ -79,6 +79,37 @@ EXCLUDE_PREFIX = (
     "harness-bootstrap/design-pack/",  # Askewly Design 개인 디자인 시스템 (node_modules 포함)
 )
 
+# ── 플러그인 설치 위치 해석 ──────────────────────────────────────────────
+# 원본은 폴더 복사 설치(~/.claude/skills·~/.codex/skills)를 전제한다. 공개판은
+# 플러그인으로 깔리므로 설치 위치가 판마다 바뀐다 — 고정 경로를 아래 조각으로 바꾼다.
+#   Claude Code: 스킬 본문의 ${CLAUDE_PLUGIN_ROOT} 를 실제 경로로 바꿔 준다.
+#   Codex: 바꿔 주지 않는다 → 셸에서 빈 값으로 풀리고, 플러그인 캐시에서 찾는다.
+PLUGIN_ROOT_LINE = (
+    'ASKEWLY_ROOT="${CLAUDE_PLUGIN_ROOT}"; [ -d "$ASKEWLY_ROOT/skills" ] || '
+    'ASKEWLY_ROOT="$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/askewly/*/ 2>/dev/null | tail -1)"'
+)
+_SCRIPTS_LINE = 'HARNESS_SCRIPTS="${ASKEWLY_ROOT%/}/skills/harness-run/scripts"'
+_QUOTED_HEADER = (
+    r'> HARNESS_SCRIPTS="\$HOME/\.codex/skills/harness-run/scripts"\n'
+    r'> \[ -d "\$HARNESS_SCRIPTS" \] \|\| HARNESS_SCRIPTS="\$HOME/\.claude/skills/harness-run/scripts"\n'
+)
+PLUGIN_P = [
+    (f"{name}/SKILL.md", _QUOTED_HEADER, f"> {PLUGIN_ROOT_LINE}\n> {_SCRIPTS_LINE}\n", 1)
+    for name in ("harness-plan", "harness-run", "harness-done")
+] + [
+    ("session-end/SKILL.md",
+     r'HARNESS_SCRIPTS="\$HOME/\.claude/skills/harness-run/scripts"; \[ -d "\$HARNESS_SCRIPTS" \] \|\| HARNESS_SCRIPTS="\$HOME/\.codex/skills/harness-run/scripts"\n'
+     r'SE_BIN="\$HOME/\.claude/skills/session-end/bin"; \[ -d "\$SE_BIN" \] \|\| SE_BIN="\$HOME/\.codex/skills/session-end/bin"\n',
+     f'{PLUGIN_ROOT_LINE}\n{_SCRIPTS_LINE}\nSE_BIN="${{ASKEWLY_ROOT%/}}/skills/session-end/bin"\n', 1),
+    ("harness-done/SKILL.md",
+     r"`python ~/\.claude/skills/harness-done/bin/retire_check\.py ",
+     '`python "$HARNESS_SCRIPTS/../../harness-done/bin/retire_check.py" ', 1),
+    ("session-end/bin/roadmap_hygiene.py",
+     r"~/\.(?:claude|codex)/skills/", "<플러그인 루트>/skills/", 4),
+]
+# Codex 표시 파일의 스킬 호출 이름 — 플러그인으로 깔리면 `<플러그인>:<스킬>` 이다.
+OPENAI_YAML_P = (r"\$(harness-(?:plan|run|done|bootstrap)|session-end)\b", r"$askewly:\1")
+
 # ── 디커플링 치환 규칙 ───────────────────────────────────────────────────
 # (대상 파일, 정규식, 치환문, 최소 적중 수). 최소 적중에 못 미치면 소스가
 # 바뀐 것이다 — 조용히 넘어가지 않고 실패한다(규칙이 물어야 leak 이 안 샌다).
@@ -111,16 +142,16 @@ P = [
     # 번들 경로가 1순위, 외부 체크아웃($AO_ROOT)은 opt-in 폴백
     ("harness-bootstrap/SKILL.md",
      r"핵심 로직: `harness/scripts/init-ai-readiness\.sh`\(구 h-e\) \(Codex·CI 등 어디서든 호출 가능\)\. 경로는 §3 의 해석 사슬로 찾는다 — `\$AO_ROOT`\(기본 `~/projects/agent-orchestration`\) → 형제 디렉터리\.",
-     "핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(`~/.claude`·`~/.codex`) → `$AO_ROOT`(opt-in).", 1),
+     "핵심 로직: 번들 `scripts/init-ai-readiness.sh` (이 스킬 디렉터리에 동봉 — Codex·CI 등 어디서든 호출 가능). 경로는 §3 의 해석 사슬로 찾는다 — 번들 경로(플러그인 설치 위치) → `$AO_ROOT`(opt-in).", 1),
     ("harness-bootstrap/SKILL.md",
      r'AO_ROOT="\$\{AO_ROOT:-\$HOME/projects/agent-orchestration\}"\n',
      'AO_ROOT="${AO_ROOT:-/nonexistent}"\n', 1),
     ("harness-bootstrap/SKILL.md",
      r'for c in "\$AO_ROOT/harness/scripts/init-ai-readiness\.sh" "\$\(git rev-parse --show-toplevel 2>/dev/null\)/\.\./agent-orchestration/harness/scripts/init-ai-readiness\.sh"; do',
-     'for c in "$HOME/.claude/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$HOME/.codex/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do', 1),
+     PLUGIN_ROOT_LINE + '\nfor c in "${ASKEWLY_ROOT%/}/skills/harness-bootstrap/scripts/init-ai-readiness.sh" "$AO_ROOT/scripts/init-ai-readiness.sh"; do', 1),
     ("harness-bootstrap/SKILL.md",
      r"init-ai-readiness\.sh 를 못 찾았다 — agent-orchestration 체크아웃 경로를 AO_ROOT 로 지정하라",
-     "init-ai-readiness.sh 를 못 찾았다 — 스킬이 ~/.claude/skills 또는 ~/.codex/skills 에 설치됐는지 확인하라", 1),
+     "init-ai-readiness.sh 를 못 찾았다 — askewly 플러그인이 설치됐는지 확인하라(Claude Code `/plugin` · Codex `codex plugin list`)", 1),
     # harness-bootstrap: 개인 디자인 스킬 참조 제거
     ("harness-bootstrap/SKILL.md",
      r"웹 화면 디자인은 팩이 아니라 `/askewly-design` 스킬이 받는다\(design-pack 은 2026-09-21 은퇴 — 공식 DESIGN\.md 스펙과 불일치한 채 8/6 부터 STALE 이었다\)\.",
@@ -159,7 +190,8 @@ GLOBAL_P = [
 # ── leak-check — 출고 트리에 남으면 안 되는 패턴 ─────────────────────────
 LEAK_PATTERNS = [
     r"\byusun",
-    r"lumatic",
+    r"(?<!github\.com/)lumatic",          # 공개 레포 주소(github.com/…)는 개인 배선이 아니다
+    r"\.(?:claude|codex)/skills",         # 폴더 복사 설치 시절의 고정 경로 — 플러그인에서는 안 맞는다
     r"[Cc]:\\+Users\\+(?!<you>)[A-Za-z]",
     r"/Users/(?!<you>)[a-z]",
     r"/mnt/c/Users/(?!<you>)[A-Za-z]",
@@ -216,12 +248,13 @@ def apply_patches(blobs: dict[str, bytes]) -> list[str]:
     """파일별 규칙 → 전역 규칙 순서로 치환. 못 문 규칙은 실패로 처리."""
     failures: list[str] = []
     patched: set[str] = set()
-    for rel, pat, repl, min_hits in P:
+    for rel, pat, repl, min_hits in P + PLUGIN_P:
         if rel not in blobs:
             failures.append(f"규칙 대상 없음: {rel}")
             continue
         text = blobs[rel].decode("utf-8")
-        new, n = re.subn(pat, repl, text, flags=re.MULTILINE)
+        # 치환문은 글자 그대로 넣는다 — 셸 조각의 역슬래시·그룹 참조가 해석되지 않게.
+        new, n = re.subn(pat, lambda _m, _r=repl: _r, text, flags=re.MULTILINE)
         if n < min_hits:
             failures.append(f"규칙 미적중({n}<{min_hits}): {rel} :: {pat[:60]}")
             continue
@@ -234,6 +267,8 @@ def apply_patches(blobs: dict[str, bytes]) -> list[str]:
         orig = text
         for pat, repl in GLOBAL_P:
             text = re.sub(pat, repl, text)
+        if rel.endswith("agents/openai.yaml"):
+            text = re.sub(OPENAI_YAML_P[0], OPENAI_YAML_P[1], text)
         if text != orig:
             blobs[rel] = text.encode("utf-8")
             patched.add(rel)
@@ -255,14 +290,20 @@ def leak_check(tree: dict[str, bytes]) -> list[str]:
 
 
 def scan_repo_tree() -> dict[str, bytes]:
+    """제품에 들어가는 파일만 본다 — 추적 파일과, gitignore 에 안 걸린 미추적 파일."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        capture_output=True, check=True,
+    ).stdout.decode("utf-8")
     tree: dict[str, bytes] = {}
-    for p in ROOT.rglob("*"):
-        if p.is_file() and ".git" not in p.parts:
-            tree[p.relative_to(ROOT).as_posix()] = p.read_bytes()
+    for rel in sorted(r for r in out.split("\0") if r.strip()):
+        p = ROOT / rel
+        if p.is_file():
+            tree[rel] = p.read_bytes()
     return tree
 
 
-def collect() -> tuple[dict[str, bytes], list[str]]:
+def collect(allow_dirty: bool = False) -> tuple[dict[str, bytes], list[str]]:
     blobs: dict[str, bytes] = {}
     lines = [
         "# skills/ 매니페스트",
@@ -279,7 +320,10 @@ def collect() -> tuple[dict[str, bytes], list[str]]:
         head = git(repo, "log", "-1", "--format=%H", "--", *paths)
         when = git(repo, "log", "-1", "--format=%cs", "--", *paths)
         pending = dirty_paths(repo, paths)
-        if pending:
+        if pending and allow_dirty:
+            # 읽는 것은 커밋의 바이트다(blob_at) — 작업 중인 변경은 실리지 않는다.
+            print(f"주의: {repo.name} 에 커밋되지 않은 변경 {len(pending)}건 — 마지막 커밋 {head[:12]} 기준으로 뜬다.")
+        elif pending:
             raise SystemExit(
                 f"{repo.name}: 채취 대상에 커밋되지 않은 변경 {len(pending)}건.\n"
                 + "\n".join(f"  {p}" for p in pending[:10])
@@ -311,6 +355,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true", help="쓰지 않고 이격 여부만 판정")
     ap.add_argument("--leak-check-only", action="store_true", help="현재 트리 잔류 스캔만")
+    ap.add_argument("--allow-dirty-source", action="store_true",
+                    help="원본에 커밋 안 된 변경이 있어도 마지막 커밋 기준으로 뜬다(기본은 거부)")
     args = ap.parse_args()
 
     if args.leak_check_only:
@@ -323,7 +369,7 @@ def main() -> int:
         print("leak-check PASS: 잔류 개인 배선 0")
         return 0
 
-    blobs, manifest_lines = collect()
+    blobs, manifest_lines = collect(allow_dirty=args.allow_dirty_source)
     manifest = "\n".join(manifest_lines).rstrip() + "\n"
     wanted = dict(blobs)
     wanted["MANIFEST.md"] = manifest.encode("utf-8")
