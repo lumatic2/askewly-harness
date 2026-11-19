@@ -1,6 +1,6 @@
 {
   "name": "askewly",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Plan, run, done: a harness that keeps coding agents inside approved plans and makes \"done\" something you can re-run.",
   "author": {
     "name": "Askewly",
