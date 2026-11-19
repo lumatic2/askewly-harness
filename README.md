@@ -64,6 +64,8 @@ Update: `codex plugin marketplace upgrade askewly`
 
 Five skills are installed: `harness-plan`, `harness-run`, `harness-done`, `harness-bootstrap`, `session-end`. They are called with the plugin name in front, as in `/askewly:harness-plan` (Codex: `$askewly:harness-plan`). In Claude Code the short form `/harness-plan` also works when no other skill has the same name. Releases are listed in [CHANGELOG.md](./CHANGELOG.md).
 
+Exercised end to end (bootstrap → plan → run → done in an empty folder) on Windows 11 with Claude Code and Codex, and on macOS with Codex. On macOS with Claude Code the install is verified; the full run has not been exercised yet.
+
 | Environment variable | Default | Purpose |
 |---|---|---|
 | `HARNESS_JOURNAL_DIR` | `~/harness-journal` | where `session-end` appends the daily journal |

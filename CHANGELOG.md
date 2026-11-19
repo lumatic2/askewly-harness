@@ -2,6 +2,10 @@
 
 Each release is a snapshot of how the harness is actually run at that date.
 
+## 0.1.1 — 2026-11-20
+
+- README lists where the install was actually exercised. No change to the skills.
+
 ## 0.1.0 — 2026-11-20
 
 First plugin release.

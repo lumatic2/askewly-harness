@@ -64,6 +64,8 @@ codex plugin add askewly@askewly
 
 스킬 다섯 개가 설치됩니다: `harness-plan` · `harness-run` · `harness-done` · `harness-bootstrap` · `session-end`. 부를 때는 `/askewly:harness-plan` 처럼 플러그인 이름을 앞에 붙입니다(Codex 는 `$askewly:harness-plan`). Claude Code 에서는 같은 이름의 다른 스킬이 없으면 `/harness-plan` 으로도 불립니다. 판별 변경 내용은 [CHANGELOG.md](./CHANGELOG.md) 에 있습니다.
 
+빈 폴더에서 부트스트랩 → 계획 → 실행 → 완료까지 실제로 돌려 본 환경은 Windows 11 의 Claude Code·Codex 와 macOS 의 Codex 입니다. macOS 의 Claude Code 는 설치까지만 확인했고, 전체 구동은 아직 돌려 보지 않았습니다.
+
 | 환경변수 | 기본값 | 용도 |
 |---|---|---|
 | `HARNESS_JOURNAL_DIR` | `~/harness-journal` | `session-end` 가 일지를 덧붙이는 위치 |
