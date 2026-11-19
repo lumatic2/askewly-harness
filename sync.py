@@ -190,7 +190,7 @@ GLOBAL_P = [
 # ── leak-check — 출고 트리에 남으면 안 되는 패턴 ─────────────────────────
 LEAK_PATTERNS = [
     r"\byusun",
-    r"(?<!github\.com/)lumatic",          # 공개 레포 주소(github.com/…)는 개인 배선이 아니다
+    r"(?<!github\.com/)lumatic(?!2/askewly-harness)",  # 공개 레포 주소·설치 명령의 레포 이름은 개인 배선이 아니다
     r"\.(?:claude|codex)/skills",         # 폴더 복사 설치 시절의 고정 경로 — 플러그인에서는 안 맞는다
     r"[Cc]:\\+Users\\+(?!<you>)[A-Za-z]",
     r"/Users/(?!<you>)[a-z]",

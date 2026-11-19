@@ -9,7 +9,7 @@
 
 # askewly-harness
 
-### Claude Code와 Codex를 함께 운용하기 위한 개인 에이전트 운영 체계, 설치형 스킬 패키지.
+### Claude Code와 Codex를 함께 운용하기 위한 개인 에이전트 운영 체계, 플러그인.
 
 <h2>"완료"는 누군가 다시 돌려보기 전까지 주장입니다.</h2>
 
@@ -38,44 +38,50 @@
 
 </div>
 
-이 저장소는 한 사람이 두 개의 코딩 에이전트를 운용하는 하네스의 설치형 배포판입니다. 아래 산문이 체계를 서술하고, `skills/` 에는 그 체계를 구현하는 스킬이 들어 있습니다. 비공개 원본에서 특정 커밋 기준으로 떠 와 공개용으로 디커플링한 것입니다. (이 문서의 읽기 전용 판은 *luka-playbook* 이라는 이름으로 먼저 공개되었고, 지금은 여기로 통합되었습니다.)
+이 저장소는 한 사람이 두 개의 코딩 에이전트를 운용하는 하네스의 플러그인 배포판입니다. 아래 산문이 체계를 서술하고, `skills/` 에는 그 체계를 구현하는 스킬이 들어 있습니다. 비공개 원본에서 특정 커밋 기준으로 떠 와 공개용으로 디커플링한 것입니다. (이 문서의 읽기 전용 판은 *luka-playbook* 이라는 이름으로 먼저 공개되었고, 지금은 여기로 통합되었습니다.)
 
 <a id="install"></a>
 
 ## 설치
 
-```bash
-bash install.sh           # ~/.claude/skills/ 에 설치  (Claude Code)
-bash install.sh --codex   # ~/.codex/skills/ 에도 추가 설치  (Codex)
+**Claude Code**
+
+```text
+/plugin marketplace add lumatic2/askewly-harness
+/plugin install askewly@askewly
 ```
 
-Windows PowerShell 에서는:
+업데이트: `/plugin marketplace update askewly`
 
-```powershell
-./install.ps1             # ~\.claude\skills\
-./install.ps1 -Codex      # ~\.codex\skills\ 에도
+**Codex**
+
+```text
+codex plugin marketplace add lumatic2/askewly-harness
+codex plugin add askewly@askewly
 ```
 
-여섯 스킬이 설치됩니다: `harness-plan` · `harness-run` · `harness-done` · `harness-bootstrap` · `session-end` · `session-log`. 구버전의 단일 `harness` 스킬이 남아 있으면 설치기가 제거합니다.
+업데이트: `codex plugin marketplace upgrade askewly`
+
+스킬 다섯 개가 설치됩니다: `harness-plan` · `harness-run` · `harness-done` · `harness-bootstrap` · `session-end`. 부를 때는 `/askewly:harness-plan` 처럼 플러그인 이름을 앞에 붙입니다(Codex 는 `$askewly:harness-plan`). Claude Code 에서는 같은 이름의 다른 스킬이 없으면 `/harness-plan` 으로도 불립니다. 판별 변경 내용은 [CHANGELOG.md](./CHANGELOG.md) 에 있습니다.
 
 | 환경변수 | 기본값 | 용도 |
 |---|---|---|
-| `HARNESS_JOURNAL_DIR` | `~/harness-journal` | `session-end` / `session-log` 가 일지를 append 하는 위치 |
-| `HARNESS_ENGINEERING_ROOT` | (미설정) | opt-in: 번들 대신 외부 체크아웃의 부트스트랩 엔진을 사용 |
+| `HARNESS_JOURNAL_DIR` | `~/harness-journal` | `session-end` 가 일지를 덧붙이는 위치 |
+| `AO_ROOT` | (미설정) | 선택: 번들 대신 외부 체크아웃의 부트스트랩 엔진을 사용 |
 
 <a id="quickstart"></a>
 
 ## 시작하기
 
 ```text
-/harness-bootstrap        # 레포당 1회: CLAUDE.md·ROADMAP.md·docs/adr·changesets·templates 를 깝니다
-/harness-plan             # 결정을 소진하고 step 으로 분해해 승인 1회를 받습니다
-/harness-run              # 승인된 계획을 되묻지 않고 실행합니다
-/harness-done             # 완료 조건을 재실행해 판정하고 보고서와 상태를 남깁니다
-/session-end              # 세션 마감: 핸드오프 파일 + 일지 append
+/askewly:harness-bootstrap   # 레포당 1회: CLAUDE.md·ROADMAP.md·docs/adr·changesets 를 깝니다
+/askewly:harness-plan        # 결정을 소진하고 step 으로 분해해 승인 1회를 받습니다
+/askewly:harness-run         # 승인된 계획을 되묻지 않고 실행합니다
+/askewly:harness-done        # 완료 조건을 재실행해 판정하고 보고서와 상태를 남깁니다
+/askewly:session-end         # 세션 마감: 핸드오프 파일 + 일지 append
 ```
 
-`harness-bootstrap` 은 빈 구조만 깝니다. 작업 규칙은 세 스킬 본문에 삽니다. non-trivial 작업은 `/harness-plan` 으로 시작하고, 승인 1회로 끝나며, `/harness-run` 이 승인된 계획 전체를 재확인 없이 실행합니다.
+`harness-bootstrap` 은 빈 구조만 깝니다. 작업 규칙은 세 스킬 본문에 삽니다. non-trivial 작업은 `/askewly:harness-plan` 으로 시작하고, 승인 1회로 끝나며, `/askewly:harness-run` 이 승인된 계획 전체를 재확인 없이 실행합니다.
 
 <a id="what-this-defines"></a>
 
@@ -357,8 +363,10 @@ Claude와 Codex 사이에 고정된 계층을 두지 않습니다. 현재 작업
 ```text
 askewly-harness/
 ├── README.md · README.ko.md · LICENSE
-├── install.sh · install.ps1     # skills/ 를 ~/.claude/skills (그리고 ~/.codex/skills) 로 복사
-├── sync.py                      # 작성자용: 비공개 원본에서 재채취 + 디커플링 + leak-check
+├── CHANGELOG.md                 # 판마다 한 항목
+├── .claude-plugin/              # Claude Code 플러그인·마켓플레이스 등록 파일
+├── .codex-plugin/ · .agents/    # Codex 플러그인·마켓플레이스 등록 파일
+├── sync.py · tests/             # 작성자용: 비공개 원본에서 재채취 + 디커플링 + leak-check
 ├── assets/
 └── skills/
     ├── MANIFEST.md              # 파일별 sha256, 채취 커밋 고정 — sync.py 생성물
@@ -367,8 +375,7 @@ askewly-harness/
     │   └── scripts/             # 게이트 기계장치: approve/validate/report/ledger + 테스트
     ├── harness-done/            # 완료: 조건 재실행, 보고서, 로드맵 갱신
     ├── harness-bootstrap/       # 레포 부팅: 번들 init 엔진 + 템플릿
-    ├── session-end/             # 세션 마감: 핸드오프 커밋 + 일지 append
-    └── session-log/             # 일지 append 전용 (병렬 세션 안전)
+    └── session-end/             # 세션 마감: 핸드오프 커밋 + 일지 append
 ```
 
 `skills/` 는 생성물입니다. `sync.py` 가 비공개 원본 저장소의 특정 커밋에서 파일을 떠 오고(커밋 안 된 원본은 거부), 개인 배선(기기명, 개인 경로, 개인 알림 채널)을 걷어내는 디커플링 규칙을 적용한 뒤, 잔류 검사가 0건이어야만 기록합니다. `skills/MANIFEST.md` 에 채취 커밋과 파일별 sha256 이 남습니다. 재채취에는 비공개 저장소가 필요하므로 `sync.py` 는 작성자 기기에서만 돌아갑니다. 여러분이 설치하는 것은 검사를 통과한 스냅샷입니다.

@@ -9,7 +9,7 @@
 
 # askewly-harness
 
-### A personal operating system for running Claude Code and Codex together, as installable skills.
+### A personal operating system for running Claude Code and Codex together, as a plugin.
 
 <h2>"Done" is a claim until something re-runs it.</h2>
 
@@ -38,44 +38,50 @@
 
 </div>
 
-This repository is the installable distribution of one person's harness for running two coding agents. The design prose below describes the system; `skills/` contains the skills that implement it, taken from the private originals at a pinned commit and decoupled for public use. (An earlier read-only edition of this document was published as *luka-playbook*, now merged here.)
+This repository is the plugin distribution of one person's harness for running two coding agents. The design prose below describes the system; `skills/` contains the skills that implement it, taken from the private originals at a pinned commit and decoupled for public use. (An earlier read-only edition of this document was published as *luka-playbook*, now merged here.)
 
 <a id="install"></a>
 
 ## Install
 
-```bash
-bash install.sh           # installs into ~/.claude/skills/  (Claude Code)
-bash install.sh --codex   # also installs into ~/.codex/skills/  (Codex)
+**Claude Code**
+
+```text
+/plugin marketplace add lumatic2/askewly-harness
+/plugin install askewly@askewly
 ```
 
-On Windows PowerShell:
+Update: `/plugin marketplace update askewly`
 
-```powershell
-./install.ps1             # ~\.claude\skills\
-./install.ps1 -Codex      # also ~\.codex\skills\
+**Codex**
+
+```text
+codex plugin marketplace add lumatic2/askewly-harness
+codex plugin add askewly@askewly
 ```
 
-Six skills are installed: `harness-plan`, `harness-run`, `harness-done`, `harness-bootstrap`, `session-end`, `session-log`. If a legacy `harness` skill from an older release is present, the installer removes it.
+Update: `codex plugin marketplace upgrade askewly`
+
+Five skills are installed: `harness-plan`, `harness-run`, `harness-done`, `harness-bootstrap`, `session-end`. They are called with the plugin name in front, as in `/askewly:harness-plan` (Codex: `$askewly:harness-plan`). In Claude Code the short form `/harness-plan` also works when no other skill has the same name. Releases are listed in [CHANGELOG.md](./CHANGELOG.md).
 
 | Environment variable | Default | Purpose |
 |---|---|---|
-| `HARNESS_JOURNAL_DIR` | `~/harness-journal` | where `session-end` / `session-log` append the daily journal |
-| `HARNESS_ENGINEERING_ROOT` | (unset) | opt-in: use an external checkout of the bootstrap engine instead of the bundled one |
+| `HARNESS_JOURNAL_DIR` | `~/harness-journal` | where `session-end` appends the daily journal |
+| `AO_ROOT` | (unset) | opt-in: use an external checkout of the bootstrap engine instead of the bundled one |
 
 <a id="quickstart"></a>
 
 ## Quickstart
 
 ```text
-/harness-bootstrap        # once per repository: lays CLAUDE.md, ROADMAP.md, docs/adr, changesets, templates
-/harness-plan             # settle decisions, decompose into steps, get one approval
-/harness-run              # execute the approved plan without re-asking
-/harness-done             # re-run the completion criteria, write the report, update state
-/session-end              # close the session: handoff file + journal append
+/askewly:harness-bootstrap   # once per repository: lays CLAUDE.md, ROADMAP.md, docs/adr, changesets
+/askewly:harness-plan        # settle decisions, decompose into steps, get one approval
+/askewly:harness-run         # execute the approved plan without re-asking
+/askewly:harness-done        # re-run the completion criteria, write the report, update state
+/askewly:session-end         # close the session: handoff file + journal append
 ```
 
-`harness-bootstrap` installs nothing but empty structure; the working rules live in the three skill bodies. Start any non-trivial work with `/harness-plan`; it ends with a single approval, and `/harness-run` executes the whole approved plan without stopping to re-confirm.
+`harness-bootstrap` installs nothing but empty structure; the working rules live in the three skill bodies. Start any non-trivial work with `/askewly:harness-plan`; it ends with a single approval, and `/askewly:harness-run` executes the whole approved plan without stopping to re-confirm.
 
 <a id="what-this-defines"></a>
 
@@ -357,8 +363,10 @@ Terminal input does not reach a session that is mid-run in a long autonomous str
 ```text
 askewly-harness/
 ├── README.md · README.ko.md · LICENSE
-├── install.sh · install.ps1     # copy skills/ into ~/.claude/skills (and ~/.codex/skills)
-├── sync.py                      # author-side: re-take from the private originals + decouple + leak-check
+├── CHANGELOG.md                 # one entry per release
+├── .claude-plugin/              # Claude Code plugin + marketplace manifests
+├── .codex-plugin/ · .agents/    # Codex plugin + marketplace manifests
+├── sync.py · tests/             # author-side: re-take from the private originals + decouple + leak-check
 ├── assets/
 └── skills/
     ├── MANIFEST.md              # per-file sha256, pinned source commits — generated by sync.py
@@ -367,8 +375,7 @@ askewly-harness/
     │   └── scripts/             # the gate machinery: approve/validate/report/ledger + their tests
     ├── harness-done/            # completion: criteria re-run, report, roadmap update
     ├── harness-bootstrap/       # per-repo bootstrap: bundled init engine + templates
-    ├── session-end/             # session close: handoff commit + journal append
-    └── session-log/             # journal append only (parallel-session safe)
+    └── session-end/             # session close: handoff commit + journal append
 ```
 
 `skills/` is a generated snapshot. `sync.py` takes the files from the private source repositories at a pinned commit (refusing dirty sources), applies the decoupling rules that strip personal wiring (machine names, private paths, personal notification relays), and then runs a leak check that must come back empty before anything is written. `skills/MANIFEST.md` records the source commit and a sha256 for every shipped file. Re-taking the snapshot requires the private repositories, so `sync.py` only runs on the author's machine; what you install is the checked snapshot.
