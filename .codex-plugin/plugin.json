@@ -1,0 +1,24 @@
+{
+  "name": "askewly",
+  "version": "0.1.0",
+  "description": "Plan, run, done: a harness that keeps coding agents inside approved plans and makes \"done\" something you can re-run.",
+  "author": {
+    "name": "Askewly",
+    "url": "https://github.com/lumatic2"
+  },
+  "homepage": "https://github.com/lumatic2/askewly-harness",
+  "repository": "https://github.com/lumatic2/askewly-harness",
+  "license": "MIT",
+  "keywords": ["harness", "planning", "verification", "approval", "claude-code", "codex", "skills"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Askewly Harness",
+    "shortDescription": "Plan, run, done — with approval receipts and re-runnable completion",
+    "longDescription": "Askewly keeps coding agents inside approved plans. Work is planned first, approved with a receipt, and \"done\" is a check you can re-run.",
+    "developerName": "Askewly",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/lumatic2/askewly-harness",
+    "defaultPrompt": ["Plan this work with the harness before building it."]
+  }
+}

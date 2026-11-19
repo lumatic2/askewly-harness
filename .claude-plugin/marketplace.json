@@ -1,0 +1,15 @@
+{
+  "name": "askewly",
+  "description": "Askewly harness marketplace.",
+  "owner": {
+    "name": "Askewly",
+    "url": "https://github.com/lumatic2"
+  },
+  "plugins": [
+    {
+      "name": "askewly",
+      "source": "./",
+      "description": "Plan, run, done: a harness that keeps coding agents inside approved plans and makes \"done\" something you can re-run."
+    }
+  ]
+}
